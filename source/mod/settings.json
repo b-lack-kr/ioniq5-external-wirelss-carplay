@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "settings": [
+    {
+      "key": "carplay_tbt",
+      "type": "toggle",
+      "default": true,
+      "title": "CarPlay 계기판·HUD 경로 안내",
+      "apply": "restart"
+    },
+    {
+      "key": "bridge",
+      "type": "toggle",
+      "default": true,
+      "title": "bridge",
+      "apply": "restart"
+    },
+    {
+      "key": "audio",
+      "type": "toggle",
+      "default": true,
+      "title": "audio",
+      "apply": "restart"
+    }
+  ]
+}

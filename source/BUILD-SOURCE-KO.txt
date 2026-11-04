@@ -1,0 +1,28 @@
+NEEV USB CarPlay 1.0.0 소스 빌드
+
+USB 설치용 ZIP과 함께 배포되는 이 소스에는 CarPlay/턴바이턴, AP 실행기, 음소거 추가 모드, 설치·검증 코드, 라이선스와 차종별 지도가 들어 있습니다. maps의 파일은 도로 지도 대신 차량 클래스 및 메서드의 연결과 펌웨어 해시를 기술합니다. 코드를 수정하거나 재배포할 때 실제 배포 바이너리와 일치하는 소스와 고지문을 함께 제공하세요.
+
+준비물
+Python 3.9 이상, JDK 17, Android SDK Platform 34의 android.jar, D8을 제공하는 R8 JAR, sh를 갖춘 macOS 또는 Linux 환경을 준비합니다. D8 타깃은 Android API 19 / Dalvik 035입니다. upstream/HMG-API-1.0.1에는 이 빌드에 쓰이는 원본 Java 런타임·도구와 컴파일 스텁을 포함했습니다. 차량 펌웨어와 Wi-Fi 드라이버 원본은 빌드에 필요하지 않습니다.
+
+빌드
+이 ZIP을 작업 디렉터리에 풀고 다음 명령을 실행합니다. 빌드 출력에는 새 로컬 서명 키를 사용합니다. 키 경로는 배포하는 파일과 분리해서 지정하세요. 기존에 쓰는 HMG 저자 키가 있으면 --sign-key로 지정할 수 있습니다.
+
+python3 tools/rebuild_usb.py --java-home /path/to/jdk-17 --android-jar /path/to/android.jar --d8 /path/to/r8.jar --out /path/to/new-build --sign-key /path/to/own-author.key
+
+새 키가 필요할 때는 --sign-key /path/to/new-private-dir/author.key와 --generate-key를 함께 지정합니다. 키가 이미 있으면 생성 요청을 중단합니다. 출력 폴더와 키는 소스 폴더 밖을 사용하세요.
+
+서명을 바꾸면 ZIP 바이트와 서명자 UUID도 바뀝니다. 새 서명은 기존 공식 모드에 덮어쓸 권한이 없습니다. 개발 빌드의 소유권을 확인할 수 있는 신규 설치 대상으로 사용하세요. 클러스터/HUD, 오디오 출력, 재부팅 후 재연결은 실제 해당 차종에서 검증해야 합니다.
+
+외부 의존성과 라이선스는 docs/THIRD-PARTY-NOTICES.txt, Wi-Fi 입력은 docs/EXTERNAL-INPUTS-KO.txt를 참조하세요. 소스 구성 파일들의 해시는 SOURCE-SHA256SUMS.txt에 있습니다.
+
+빌드한 USB의 설치 및 재실행 흐름은 python3 tests/test_joint.py /path/to/new-build/NEEV_260902_CarPlay_1.0.0_USB.zip 으로 로컬에서 시험합니다. 이 테스트는 차량과 NEMESIS 응답을 모의 처리합니다. 실제 동글과 아이폰 연결은 차량에서 따로 시험하세요.
+
+tests/HistoryTest.java는 합성 로그로 실제 Java 수집기의 시간·이벤트 추출과 개인정보 제외를 시험합니다. JDK 17의 javac와 java를 PATH에 두고 비어 있는 테스트 폴더에서 실행하세요. 아래 SRC를 이 소스를 푼 디렉터리의 절대 경로로 지정합니다.
+
+SRC=/path/to/extracted-source
+mkdir classes mock-vehicle
+javac --release 8 -d classes "$SRC"/setup/*.java "$SRC"/upstream/HMG-API-1.0.1/core/runtime/java/hmgapi/engine/Json.java "$SRC"/tests/HistoryTest.java
+java -cp classes kr.ioniq5.usbcp.setup.HistoryTest mock-vehicle
+
+기본 빌드에는 검증된 패치 레시피를 사용합니다. 인터페이스 분류 자체를 수정하려면 mod/native/classify.S와 mod/native/build_recipe.py를 확인하세요. 이 선택형 레시피 재생성 단계에는 해당 펌웨어에서 직접 구한 일치하는 원본 libCarPlayCoreUtils.so와 ARM Thumb 조립을 지원하는 clang이 필요합니다.

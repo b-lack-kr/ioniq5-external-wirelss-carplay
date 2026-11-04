@@ -1,0 +1,19 @@
+{
+  "id": "neev-carplay-mute-pause",
+  "version": "1.0.0",
+  "name": "CarPlay Pause on Steering Wheel Mute",
+  "authors": ["by blackr"],
+  "description": "Pause playing CarPlay music on a confirmed steering-wheel mute. Keep the vehicle's stock key behavior.",
+  "license": "AGPL-3.0",
+  "hmgapi": ">=1.0.1",
+  "system": {"model": "NEEV", "region": "KOR", "firmware": "260902", "platform": "tcc803x"},
+  "hooks": {
+    "jar": "hooks.jar",
+    "entry": "kr.ioniq5.mutepause.MutePause",
+    "points": {
+      "framework.hkmc_loader.automotive_service": "observe",
+      "framework.window_manager_service.intercept_key": "observe",
+      "dipo.carplay.session_started": "observe"
+    }
+  }
+}

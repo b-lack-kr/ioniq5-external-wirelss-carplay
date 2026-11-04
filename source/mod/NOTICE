@@ -1,0 +1,8 @@
+IONIQ 5 USB CarPlay 1.0.0 for NEEV.KOR.260902, 2026-11-05
+HMG-API and the wireless-carplay-aa module by VysseCodes (AGPL-3.0).
+Includes adaptations of reproducepark's IONIQ 5 AA USB observer.
+Contains Leafia-derived in-memory CarPlay patch recipes, as published in
+the HMG-API wireless-carplay-aa module. See the source distribution's notices.
+This local derivative adds a 5 GHz USB access point, mod-specific process
+and interface validation, Korean CarPlay guidance and music metadata.
+Uses separately obtained HKG_5W_USB_Wlan v2.0.2 USB hardware support at runtime.

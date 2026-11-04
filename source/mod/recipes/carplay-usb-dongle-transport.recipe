@@ -1,0 +1,8 @@
+# Captured NEEV.KOR.260902 CoreUtils, package target MD5 cf3cc23dad25b181a9fc12d606468715
+# Write the complete stub first. Publish the new branch last.
+id carplay-usb-dongle-transport
+file /system/lib/libCarPlayCoreUtils.so
+verify 0x9b2a8 92 534d78034b774b6266f2189576f8c6e3 dac4c64600044b51ffa167454d04ed19
+verify 0x4dc42 590 90b96afdb691b581fa65b92f3383c598 a4de3684fa7a423bccf3543921067794
+patch 0x9b2b0 2078722820d1607874281dd1a07877281ad1e0786c2817d12079612814d160796e2811d1a079303809280dd8e07948b13038092808d8207a20b13038092803d8607a08b9b2f7edbcb2f7c4bd
+patch 0x4dcce 4df0efa2

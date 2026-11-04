@@ -1,0 +1,8 @@
+.DS_Store
+._*
+USB_READY/
+.neev-usb.*/
+*.key
+*.key.pub
+*.log
+__pycache__/

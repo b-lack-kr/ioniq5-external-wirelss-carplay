@@ -1,0 +1,9 @@
+USB Wi-Fi 원본 준비
+
+처음 설치하는 차량에서는 GRT47의 HKG_5W_USB_Wlan v2.0.2 릴리스 페이지에서 설치용 ZIP을 받으세요. GitHub가 제공하는 “Source code” 자동 압축은 실행 파일이 없는 소스 스냅샷입니다.
+
+https://github.com/GRT47/HKG_5W_USB_Wlan/releases/tag/v2.0.2
+
+원본 설치 ZIP 안에 packages/usbwifi.hotspot.zip이 있습니다. 그 내부 패키지의 SHA-256은 d9077ba275398c1578444fdea479a5675e21f1b36f9ad3217e57b65aeadc512b입니다. 원본 파일을 놓는 위치와 지원되는 이전 설치 조건은 동봉된 사용 설명서를 따르세요.
+
+배포본은 원본으로부터 tcc803x용 88x2bu.ko, 8851bu.ko, usbwifistatus.jar의 해시를 확인합니다. 사용자가 따로 받은 파일을 설치 과정에서 읽습니다. 원본에 포함된 NEMESIS.data를 이 배포본의 NEMESIS.data 위에 복사하면 실행할 설치기가 바뀌므로 Wi-Fi 설치 ZIP 자체를 USB 루트에 풀지 마세요.

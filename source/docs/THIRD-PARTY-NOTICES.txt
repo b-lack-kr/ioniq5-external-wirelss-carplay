@@ -1,0 +1,36 @@
+NEEV 260902 USB CarPlay 1.0.0
+2026-11-05
+
+1. CarPlay bridge, route guidance and HMG-API
+
+The DiPO bridge and CpTurns are derived from VysseCodes' Wireless CarPlay + Android Auto mod for HMG-API. The upstream mod and HMG-API are licensed under the GNU Affero General Public License version 3. The installed HMG-API runtime is a separate dependency. The matching public source archive includes the modified Java sources, HMG-API build interfaces, compile-time signatures and the HMG-API Json source used by the installer. The Bluetooth and Telechips signatures are small build-time declarations from the upstream mod. The running vehicle supplies its own implementations.
+
+The NEEV adaptation changes USB AP discovery, wireless session classification, audio-format selection, reconnection, maneuver rendering, mute handling and startup notifications. See the matching source package for the implementation and build inputs.
+
+https://github.com/VysseCodes/HMG-API
+https://github.com/VysseCodes/HMG-API/releases/tag/v1.0.1
+
+2. Wireless CarPlay patch recipes and route guidance ports
+
+CarPlay audio and transport recipes are based on those in HMG-API's wireless-carplay-aa mod and the HMG Leafia Plus project. The HMG Leafia Plus distribution identifies the original Leafia recipe and wireless bridge work under GPL version 3, and the NEMESIS community packages under AGPL version 3. The route-guidance maneuver-index correction is credited upstream to Isaac Wisdom. Firmware matching and USB interface classification for this NEEV build are local modifications. The recipes contain patch data and hashes. The installed receiver libraries are supplied by the vehicle.
+
+https://github.com/VysseCodes/HMG-API/tree/v1.0.1/mods/wireless-carplay-aa
+https://github.com/xwtk/hmg_nemesis
+
+3. IONIQ 5 AP observer
+
+The AP observation, stability and client/provider code is adapted from reproducepark's ioniq5-aa-oneclick-0.2.3-r1 source distribution. Its signed ioniq5-usb-aa mod identifies reproducepark as author and AGPL-3.0 as license. The modified sources are included in the matching source archive.
+
+4. USB Wi-Fi runtime dependencies
+
+GRT47 supplies HKG_5W_USB_Wlan 2.0.2. Its USB application package contains Realtek's 88x2bu.ko and 8851bu.ko, and the com.hkg.usbwifi helper that prepares a local hostapd. These executables are supplied by the recipient from the original upstream release or verified earlier installation. The public USB and source archives do not contain the GRT47 daemon, helper or kernel modules. The kernel modules identify Realtek Semiconductor Corp. and declare GPL in their module metadata. This package grants no license to third-party inputs obtained separately.
+
+https://github.com/GRT47/HKG_5W_USB_Wlan/releases/tag/v2.0.2
+
+5. NEMESIS and toolchain
+
+NEMESIS by xwtk (AGPL-3.0) provides the package manager and USB dispatch on the installed unit. The build uses a separately obtained JDK, Android API and D8/R8. Their implementations are not shipped in the vehicle installer.
+
+https://github.com/xwtk/hmg_nemesis
+
+The directory licenses contains unmodified license texts and the upstream HMG-API notice. Source files retain applicable notices. The distributor must offer the matching build source together with this release, including its build and installation scripts.

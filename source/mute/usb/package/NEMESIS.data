@@ -1,0 +1,19 @@
+[nemesis]
+version=1.1
+id=hmgapi.neev-carplay-mute-pause
+name=IONIQ 5 CarPlay Mute Pause
+type=application
+package-version=1.0.0
+short-desc="by blackr. CarPlay 음악을 차량 음소거 버튼으로 일시정지합니다."
+detailed-desc="by blackr. NEEV KOR 260902용 HMG-API 선택 모드입니다. 설치 또는 제거 후 내비게이션을 재부팅하세요."
+os="NEEV.KOR.*.260902"
+models="any"
+depends="hmgapi@>=1.0"
+preinstall=scripts/preinstall.sh
+postinstall=scripts/postinstall.sh
+preuninstall=scripts/preuninstall.sh
+
+[app.0]
+kind=sh
+path=bin/open.sh
+uid=root

@@ -1,0 +1,19 @@
+{
+  "changes": [
+    {
+      "type": "prop",
+      "key": "persist.ium.support",
+      "value": "carplay"
+    },
+    {
+      "type": "prop",
+      "key": "persist.sys.iap2.wifi",
+      "value": "t"
+    },
+    {
+      "type": "prop",
+      "key": "persist.iap2.iden.wireless",
+      "value": "t"
+    }
+  ]
+}

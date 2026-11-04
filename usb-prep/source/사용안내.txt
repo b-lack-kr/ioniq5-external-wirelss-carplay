@@ -1,0 +1,38 @@
+아이오닉 5 USB 무선 CarPlay 1.0.0
+by blackr
+
+한국 사양 아이오닉 5 (기준 모델 NE1AE.S5BMC.KR) Gen5W의 NEEV.KOR.S5W_M.V039.001.260902용입니다. 시작 전 내비의 소프트웨어 정보에서 모델과 버전을 확인하세요. 설치기는 빌드, 플랫폼과 주요 펌웨어 파일을 확인합니다. NEMESIS와 HMG-API 1.0.1, 활성 상태의 Hooks가 필요합니다. 이 구성은 TP-Link Archer T3U Nano 등 일치하는 5 GHz USB Wi-Fi 동글을 사용하는 CarPlay용입니다. 다른 차종·펌웨어·동글에 대한 동작은 확인되지 않았습니다.
+
+USB 만들기 (Windows / macOS)
+1. 인터넷에 연결된 PC에서 본인 운영체제에 맞는 준비 도구 ZIP 하나를 받아 PC의 내부 저장 공간에 압축을 풉니다. 통합 배포 ZIP을 받은 경우에도 그 안에 같은 도구가 들어 있습니다.
+   Windows https://github.com/ssyeonn/ioniq5-external-wirelss-carplay/releases/download/v1.0.0/Prepare-USB-Windows-v1.0.0.zip
+   macOS https://github.com/ssyeonn/ioniq5-external-wirelss-carplay/releases/download/v1.0.0/Prepare-USB-macOS-v1.0.0.zip
+2. 필요한 자료를 백업한 USB 메모리를 연결합니다. Windows에서는 압축을 푼 폴더의 Prepare-USB-Windows.cmd를 마우스 오른쪽 버튼으로 클릭하고 ‘관리자 권한으로 실행’을 선택합니다. Mac에서는 USB-준비-macOS.command를 실행합니다. Finder에서 열리지 않으면 터미널에 /bin/sh와 공백을 입력하고 압축을 푼 .command 파일을 끌어다 놓은 뒤 Return을 누릅니다.
+3. 준비 도구는 CarPlay 1.0.0과 GRT47 v2.0.2를 각각 공식 릴리스에서 가져와 SHA-256으로 확인합니다. 통합 ZIP에서는 동봉한 CarPlay 파일을 사용합니다. GRT47 원본을 수동으로 받을 필요는 없습니다.
+4. 목록에서 포맷할 USB의 번호를 선택합니다. 선택한 USB의 기존 파일은 지워집니다. 표시된 장치 이름·용량·디스크 번호 또는 드라이브 문자를 확인한 다음 화면에 나온 확인 문구를 직접 입력합니다. Mac은 선택한 USB 전체를 MBR 방식으로 초기화합니다. Windows는 지원되는 단일 파티션 USB의 볼륨을 포맷합니다. 양쪽 모두 32 GiB 이하는 FAT32, 그보다 큰 USB는 exFAT를 사용합니다.
+5. 31개 설치 파일 검증이 끝나면 USB를 안전하게 추출합니다. 준비가 끝난 USB에는 CarPlay와 음소거 모드, 동글 드라이버가 들어 있어 차량에서 인터넷을 쓸 필요가 없습니다.
+
+포맷 없이 파일만 만들기
+Mac은 터미널에서 /bin/sh USB-준비-macOS.command --prepare-only, Windows는 압축을 푼 폴더에서 PowerShell로 powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\Prepare-USB.ps1" -PrepareOnly 를 실행합니다. USB_READY 폴더가 생성되면 그 안의 내용을 차량에서 읽을 수 있는 전용 USB의 최상위에 복사합니다.
+
+기존 사용자가 직접 삭제한 뒤 새로 설치할 때
+1. 설치 USB를 빼 둔 상태에서 NEMESIS의 My Packages를 엽니다. 기존 CarPlay 항목(0.1.10/0.1.11의 이름은 IONIQ5 USB 5GHz CarPlay (test))과, 설치돼 있다면 IONIQ 5 CarPlay Mute Pause를 각각 Uninstall합니다. CarPlay가 여기에 표시되지 않으면 HMG-API의 Mods에서 해당 CarPlay 모드를 열고 Remove를 두 번 눌러 제거합니다. 1.0.0에서의 모드 이름은 IONIQ 5 USB CarPlay입니다. NEMESIS와 HMG-API는 설치에 필요합니다.
+2. HMG-API에서 Apply changes를 확인하고 남은 변경이 있으면 Apply를 누른 뒤 내비를 재부팅합니다. 삭제 전의 훅이 종료된 뒤에 설치 USB를 꽂으세요.
+3. 아래의 설치 순서대로 진행합니다. USB에 새로 생성된 NEEV_CP_RESULT_…/INSTALL_MODE.txt가 fresh이고 NEEV_BUNDLE_RESULT_…/STATUS.txt가 COMPLETE이면 신규 CarPlay 설치와 음소거 패키지 설치가 완료된 것입니다. 설치기는 지원되는 이전 버전의 삭제 이력을 확인한 뒤 남은 작업 폴더와 모드 설정을 활성 경로 밖에 보관합니다. 신규 설치에는 USB로 제공한 드라이버를 사용하고 새 Wi-Fi 이름과 암호를 만듭니다.
+
+설치와 사용
+1. 주차 상태에서 내비가 부팅된 다음 USB 메모리를 차량 데이터 포트에 연결합니다.
+2. NEMESIS 확인창에서 Yes를 누르고 CarPlay와 음소거 패키지가 모두 완료됐다는 알림 및 “Operation completed successfully”를 기다립니다.
+3. USB 메모리를 5 GHz 동글로 바꾸고 내비를 재부팅합니다. 정상 부팅·동글 인식·CarPlay 연결 대기는 팝업을 띄우지 않습니다. Wi-Fi 시작 실패와 USB 설치 결과는 알림으로 표시합니다.
+4. 새 차량에서는 Hyundai_와 임의의 숫자 6자리로 된 Wi-Fi 이름을 한 번 생성합니다. 0.1.10/0.1.11을 삭제하지 않고 업데이트할 때는 기존 이름과 암호를 유지합니다. 차량의 폰 프로젝션에서 아이폰을 연결합니다. 기존 등록이 있으면 그 등록으로 시도하세요. 처음이면 Bluetooth와 Wi-Fi가 켜진 아이폰을 차량에 페어링하고 CarPlay 사용을 승인합니다. Wi-Fi 목록에서 직접 암호를 입력할 필요는 없습니다.
+5. 계기판과 HUD에는 내비 앱이 보내는 회전·거리 정보를 전달합니다. 이번 버전에서는 유턴, 회전교차로 출구, 몇 시 방향 안내의 변환을 수정했습니다. 앱이 차선 정보를 보내면 계기판에 최대 8개 차선의 방향과 추천 차선을 전달합니다. 네이버 지도·카카오내비의 구간별 데이터 제공과 실제 HUD 차선 표시는 실차 확인이 필요합니다. 음악 재생 중 운전대 음소거를 짧게 눌러 실제 음소거되면 CarPlay에 일시정지를 요청합니다. 음소거 해제 후에는 직접 재생합니다.
+
+재실행 및 복구
+설치 직후의 상태는 USB의 NEEV_BUNDLE_RESULT_*와 NEEV_CP_RESULT_* 폴더에 있는 STATUS.txt에서 확인할 수 있습니다. NEEV_CP_RESULT_*/STATUS.txt에 E_VENDOR_ASSETS가 있으면 해당 버전의 GRT47 원본 ZIP을 USB에 추가한 뒤 같은 USB를 다시 실행하세요. CarPlay 버전은 HMG-API의 설치 모드 목록에서, 음소거 패키지는 NEMESIS의 My Packages에서 확인할 수 있습니다. 설치가 끝난 뒤에는 같은 USB를 다시 실행해 최근 연결·AP 상태를 받을 수 있습니다. NEEV_BUNDLE_RESULT_* 아래의 carplay-events.txt, ap-events.txt, provider-events.txt는 남아 있는 기록의 상태 코드만 추출합니다. history-status.txt에는 각 기록을 읽었는지 표시됩니다. 운행 전이거나 일부 기록이 없으면 LOGS_EXPORTED_PARTIAL로 끝날 수 있습니다. 원복이 필요하면 USB 루트에 이름이 NEEV-CP-RESTORE인 빈 파일을 만든 후 실행하고 내비를 재부팅하세요. 새로 설치한 차량에서는 공개 CarPlay 모드를 정리하고, 지원되는 이전 설치에서 올린 차량은 백업된 버전으로 복구합니다. 복구 후 재설치하려면 빈 NEEV-CP-RESTORE 파일을 지우세요. 운전대 음소거 모드만 빼려면 NEMESIS의 My Packages에서 IONIQ 5 CarPlay Mute Pause를 제거하세요.
+
+배포와 검증
+배포자 by blackr
+CarPlay · 설치 및 대응 소스 https://github.com/ssyeonn/ioniq5-external-wirelss-carplay/releases/tag/v1.0.0
+음소거 단독판 https://github.com/ssyeonn/ioniq5-carplay-mute-pause/releases/tag/v1.0.0
+USB Wi-Fi 구성요소 https://github.com/GRT47/HKG_5W_USB_Wlan/releases/tag/v2.0.2
+설치 소스와 빌드 방법은 NEEV_260902_CarPlay_1.0.0_SOURCE.zip에, 제3자 고지는 그 안의 docs/THIRD-PARTY-NOTICES.txt에 있습니다. 차량용 파일과 소스는 함께 제공합니다. macOS에서는 배포 폴더에서 shasum -a 256 -c SHA256SUMS.txt 로 체크섬을 검사할 수 있습니다. 1.0.0의 최종 실차 동작은 아직 미검증입니다.

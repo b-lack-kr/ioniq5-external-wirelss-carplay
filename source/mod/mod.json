@@ -1,0 +1,91 @@
+{
+  "id": "neev-usb-carplay",
+  "name": "IONIQ 5 USB CarPlay",
+  "version": "1.0.0",
+  "hmgapi": ">=1.0.1",
+  "authors": ["by blackr"],
+  "license": "AGPL-3.0",
+  "description": "Wireless CarPlay over a compatible 5 GHz USB Wi-Fi adapter, with cluster and HUD guidance. Korean NEEV 260902 only.",
+  "system": {
+    "model": "NEEV",
+    "region": "KOR",
+    "firmware": "260902",
+    "platform": "tcc803x"
+  },
+  "feature_flags": [
+    "com.hkmc.software.connectivity.carplay_wireless"
+  ],
+  "logs": {
+    "tags": [
+      "DiPO",
+      "GPM",
+      "Iap2",
+      "GalReceiver"
+    ],
+    "match": [
+      "HMG-API:"
+    ]
+  },
+  "hooks": {
+    "jar": "hooks.jar",
+    "entry": "kr.ioniq5.usbcp.UsbCarplay",
+    "points": {
+      "iap2.service.on_create": "observe",
+      "iap2.service_receiver.on_receive": "observe",
+      "dipo.btcm.register_listener": "observe",
+      "dipo.carplay.session_created": "observe",
+      "dipo.carplay.session_started": "observe",
+      "dipo.carplay.session_finalized": "observe",
+      "dipo.carplay.iap_message": "observe",
+      "dipo.utils.is_support_wireless_carplay": "replace",
+      "dipo.iap2_listener.connected": "replace",
+      "dipo.iap2_listener.disconnected": "replace",
+      "dipo.iap2_listener.notify": "replace",
+      "dipo.session_listener.session_details": "observe",
+      "dipo.iap2.bt_address": "change",
+      "dipo.bt.set_carplay_bt_address": "replace",
+      "iap2.service.usbcp_send_wifi": "replace",
+      "iap2.init_info.check_supports_features": "change",
+      "dipo.iap2_proxy.stop_route_guidance": "observe",
+      "framework.navigation_cluster.update_tbt_info": "replace",
+      "framework.navigation_cluster.update_tbt_sub_info": "replace",
+      "framework.navigation_cluster.update_tbt_sub_info_b": "replace",
+      "framework.navigation_cluster.update_tbt_sub_info_2c": "replace",
+      "framework.navigation_cluster.update_remain_dis": "replace"
+    },
+    "native": {
+      "libCarPlayCore.so": [
+        "recipes/carplay-core-wifi.recipe"
+      ],
+      "libCarPlayAudio.so": [
+        "recipes/carplay-audio-formats.recipe"
+      ],
+      "libCarPlayUtils.so": [
+        "recipes/carplay-utils-converter.recipe"
+      ],
+      "libCarPlayCoreUtils.so": [
+        "recipes/carplay-usb-dongle-transport.recipe"
+      ]
+    }
+  },
+  "services": [
+    {
+      "name": "usb-ap",
+      "script": "ap/service.sh",
+      "user": "root",
+      "start": "boot",
+      "restart": true
+    },
+    {
+      "name": "ap-provider",
+      "jar": "provider.jar",
+      "class": "kr.ioniq5.usbcp.Provider",
+      "user": "root",
+      "start": "android",
+      "restart": true
+    }
+  ],
+  "conflicts": [
+    "wireless-carplay-aa"
+  ]
+}

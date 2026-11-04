@@ -1,0 +1,4 @@
+source/** -text
+usb-prep/source/*.command text eol=lf
+usb-prep/source/*.cmd -text
+usb-prep/source/tools/*.ps1 -text
