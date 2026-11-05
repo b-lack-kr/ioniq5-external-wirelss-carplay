@@ -12,15 +12,19 @@ on:
 permissions:
   contents: read
 jobs:
-  volume-guid:
+  windows-powershell:
     runs-on: windows-2022
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v4
-      - name: Test real GUID paths on disposable FAT32 and exFAT volumes
-        shell: ${{ matrix.shell }}
+      - name: Windows PowerShell 5.1 - FAT32 and exFAT GUID paths
+        shell: powershell
+        run: ./usb-prep/tests/test_windows_volume.ps1 -Script ./usb-prep/source/tools/WindowsUsbVolume.ps1
+  powershell-core:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: PowerShell 7 - FAT32 and exFAT GUID paths
+        shell: pwsh
         run: ./usb-prep/tests/test_windows_volume.ps1 -Script ./usb-prep/source/tools/WindowsUsbVolume.ps1
