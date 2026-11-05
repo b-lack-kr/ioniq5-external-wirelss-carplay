@@ -1,0 +1,26 @@
+name: Windows USB preparation
+on:
+  push:
+    paths:
+      - 'usb-prep/**'
+      - '.github/workflows/windows-usb.yml'
+  pull_request:
+    paths:
+      - 'usb-prep/**'
+      - '.github/workflows/windows-usb.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  volume-guid:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test real GUID paths on disposable FAT32 and exFAT volumes
+        shell: ${{ matrix.shell }}
+        run: ./usb-prep/tests/test_windows_volume.ps1 -Script ./usb-prep/source/tools/WindowsUsbVolume.ps1
