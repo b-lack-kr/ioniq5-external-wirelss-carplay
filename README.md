@@ -1,4 +1,4 @@
-# IONIQ 5 USB 무선 CarPlay
+# IONIQ 5 무선 CarPlay (외장 USB 동글)
 
 **CarPlay 1.0.1 · 음소거 일시정지/자동 재생 1.1.0 포함 · by blackr**
 
