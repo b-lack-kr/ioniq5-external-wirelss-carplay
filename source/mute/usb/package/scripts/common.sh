@@ -12,13 +12,24 @@ hash_is() {
     digest=$(md5 "$1") || return 1
     [ "${digest%% *}" = "$2" ]
 }
-installed_release() {
-    [ -d "$MOD" ] && [ ! -L "$MOD" ] && [ ! -L "$MOD/META-HMGAPI" ] || return 1
-    hash_is "$MOD/META-HMGAPI/manifest.json" @MOD_MANIFEST_MD5@ ||
-        { [ "$UUID" = "bd5f651c-38f9-8ef4-827c-34ad706c2b5c" ] && hash_is "$MOD/META-HMGAPI/manifest.json" 90bfe998c4bcd2ec1dc173b31de5b73d; } || return 1
+verify_installed() {
     ( export CLASSPATH=/system/framework/hmgapi-hook.jar ANDROID_ROOT=/system ANDROID_DATA=/data
       unset HMGAPI_SELFTEST
       exec /system/bin/app_process /system/bin hmgapi.engine.Signing verify "$MOD" "$UUID" )
+}
+current_release() {
+    [ -d "$MOD" ] && [ ! -L "$MOD" ] && [ ! -L "$MOD/META-HMGAPI" ] &&
+        hash_is "$MOD/META-HMGAPI/manifest.json" @MOD_MANIFEST_MD5@ && verify_installed
+}
+installed_release() {
+    [ -d "$MOD" ] && [ ! -L "$MOD" ] && [ ! -L "$MOD/META-HMGAPI" ] || return 1
+    if ! hash_is "$MOD/META-HMGAPI/manifest.json" @MOD_MANIFEST_MD5@; then
+        # Only our exact previously released 1.0.0 builds may be replaced.
+        [ "$UUID" = "bd5f651c-38f9-8ef4-827c-34ad706c2b5c" ] || return 1
+        hash_is "$MOD/META-HMGAPI/manifest.json" 3152f3e47803c0cdc6081b27015fd1ee ||
+            hash_is "$MOD/META-HMGAPI/manifest.json" 90bfe998c4bcd2ec1dc173b31de5b73d || return 1
+    fi
+    verify_installed
 }
 has_installed() { [ -e "$MOD" ] || [ -L "$MOD" ]; }
 engine_ready() {

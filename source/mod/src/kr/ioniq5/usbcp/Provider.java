@@ -73,7 +73,7 @@ public final class Provider {
         state=new ApState(epoch,SystemClock.elapsedRealtime());
         final LocalServerSocket server=new LocalServerSocket(SOCKET); // bind before starting worker: singleton
         decisions=new DecisionLog(new File("/data/nemesis/neev-usbcp-logs/provider.log"));
-        decisions.event("CP_PROVIDER version=1.0.0 event=started");
+        decisions.event("CP_PROVIDER version=1.0.1 event=started");
         Thread poll=new Thread(new Runnable(){public void run(){
             LiveAp ap=new LiveAp();boolean wasReady=false;long heartbeat=0;
             while(true) {

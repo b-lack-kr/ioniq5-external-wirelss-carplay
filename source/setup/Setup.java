@@ -100,8 +100,11 @@ public final class Setup {
     static Map<String,Object> tree(File root)throws Exception {Map<String,Object> m=new TreeMap<String,Object>();treeWalk(root,root,m);return m;}
     public static void main(String[] a)throws Exception {
         if(a.length==2&&a[0].equals("history")) {
-            System.exit(History.collect(new File(a[1]), new File("/data/local/tmp/neev_usbcp/daemon_stdout.log"),
-                    new File("/data/nemesis/neev-usbcp-logs/provider.log"), new File("/system/bin/logcat")));
+            int result=History.collect(new File(a[1]), new File("/data/local/tmp/neev_usbcp/daemon_stdout.log"),
+                    new File("/data/nemesis/neev-usbcp-logs/provider.log"), new File("/system/bin/logcat"));
+            History.boot(new File(a[1]), new File("/data/hmgapi/logs/neev-usb-carplay/usb-ap.log"),
+                    new File("/data/hmgapi/state/services.status"), new File("/proc/modules"));
+            System.exit(result);
         } else if(a.length==3&&a[0].equals("merge"))merge(new File(a[1]),new File(a[2]));
         else if(a.length==2&&a[0].equals("config"))config(new File(a[1]));
         else if(a.length==1&&a[0].equals("uid"))uid();
@@ -115,7 +118,7 @@ public final class Setup {
 final class History {
     private static final int EVENT_LIMIT = 256, FILE_WINDOW = 192 * 1024, LOGCAT_LIMIT = 2 * 1024 * 1024;
     private static final String AP_STATES =
-            "STARTING WAIT_DONGLE DEVICE_VERIFIED HOSTAPD_STARTING DHCP_STARTING SERVICES_RUNNING WAIT_INTERFACE " +
+            "STARTING DRIVER_PRELOAD WAIT_ANDROID WAIT_DONGLE DEVICE_VERIFIED HOSTAPD_STARTING DHCP_STARTING SERVICES_RUNNING WAIT_INTERFACE " +
             "AP_PERMISSION_FAILED CONFIG_MISSING CONFIG_INVALID DNSMASQ_EXITED DRIVER_FAILED HOSTAPD_EXITED " +
             "HOSTAPD_PATCH_FAILED IDENTITY_REJECTED NETWORK_SETUP_FAILED STOP_TIMEOUT VENDOR_ASSETS_INVALID";
     private static final String PHASES =
@@ -155,6 +158,18 @@ final class History {
             if (phase != null && (provider || !listed(PHASES, phase))) return null;
             return m.group(1) + " " + m.group(2) + (provider ? " provider " : " observer ") +
                     event + (phase == null ? "" : " " + phase);
+        }
+        if ("boot".equals(stream)) {
+            if (line.matches("AP_STARTUP version=1[.]0[.]1 phase=(ENTRY|PRIVATE_LOG_READY|ANDROID_READY)")) return line;
+            if (line.matches("AP_STARTUP_FAILURE reason=(RUNTIME_MISSING|RUNTIME_SOURCE|TARGET_MISMATCH|EXISTING_AP_CONFLICT|PREPARE_PATHS|VENDOR_ASSETS_INVALID|PID_WRITE|STOP_TIMEOUT)")) return line;
+            if (line.matches("AP_DRIVER state=(loading|ready|failed) family=(88x2bu|8851bu)")) return line;
+            return null;
+        }
+        if ("services".equals(stream))
+            return line.matches("neev-usb-carplay (usb-ap|ap-provider) (waiting|running|exited|failed|stopped) [0-9]{1,10} [0-9]{1,4}") ? line : null;
+        if ("modules".equals(stream)) {
+            String[] parts=line.trim().split("\\s+");
+            return parts.length>=3 && (parts[0].equals("88x2bu") || parts[0].equals("8851bu")) ? parts[0]+" LOADED" : null;
         }
         java.util.regex.Matcher m = PROJECTION.matcher(line);
         if (!m.matches()) return null;
@@ -197,6 +212,25 @@ final class History {
                 for (int i = start == 0 ? 0 : 1; i + 1 < rows.length; i++) events.append(sanitized(stream, rows[i]));
             } finally { in.close(); }
         } catch (IOException error) { events.state = "READ_FAILED"; }
+        return events;
+    }
+    private static Events moduleEvents(File file) {
+        // procfs reports size zero: consume its bounded text stream, not RandomAccessFile.length().
+        Events events=new Events();
+        try {
+            if(!canonical(file)) {events.state="UNSAFE_PATH";return events;}
+            if(!file.isFile()) {events.state="MISSING";return events;}
+            InputStream input=new FileInputStream(file);
+            ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+            try {
+                byte[] buf=new byte[2048];int n,total=0;
+                while((n=input.read(buf))!=-1) {
+                    total+=n;if(total>65536) {events.state="READ_LIMIT";return events;}
+                    bytes.write(buf,0,n);
+                }
+            } finally {input.close();}
+            for(String line:bytes.toString("UTF-8").split("\n")) events.append(sanitized("modules",line));
+        } catch(IOException failed) {events.state="READ_FAILED";}
         return events;
     }
     private static Events logcat(File executable) throws InterruptedException {
@@ -254,6 +288,19 @@ final class History {
         StringBuilder text = new StringBuilder();
         for (String s : events.lines) text.append(s).append('\n');
         return text.toString();
+    }
+    static void boot(File output, File supervisor, File services, File modules) throws IOException {
+        if (!canonical(output) || !output.isDirectory() ||
+                !output.getName().matches("NEEV_BUNDLE_RESULT_[0-9]{8}_[0-9]{6}_[0-9]+"))
+            throw new IOException("invalid boot destination");
+        Events startup = fileEvents("boot", supervisor);
+        Events svc = fileEvents("services", services);
+        Events driver = moduleEvents(modules);
+        create(output,"boot-supervisor.txt",body(startup));
+        create(output,"boot-services.txt",body(svc));
+        create(output,"boot-drivers.txt",body(driver));
+        create(output,"boot-export-status.txt","supervisor="+startup.state+" events="+startup.lines.size()+
+                "\nservices="+svc.state+" events="+svc.lines.size()+"\nmodules="+driver.state+" events="+driver.lines.size()+"\n");
     }
     static int collect(File output, File apLog, File providerLog, File logcat) throws Exception {
         if (!canonical(output) || !output.isDirectory() ||

@@ -20,7 +20,11 @@ ACTIVE_TOKEN=
 ACTIVE_IFINDEX=
 ADDED_ROUTES=
 ADDED_ADDRESS=0
-. "$APP_DIR/runtime.sh" || exit 1
+# This goes to hmgapid's service log even if the private AP directory is unavailable.
+echo 'AP_STARTUP version=1.0.1 phase=ENTRY'
+startup_fail() { echo "AP_STARTUP_FAILURE reason=$1"; exit 3; }
+[ -f "$APP_DIR/runtime.sh" ] && [ ! -L "$APP_DIR/runtime.sh" ] || startup_fail RUNTIME_MISSING
+. "$APP_DIR/runtime.sh" || startup_fail RUNTIME_SOURCE
 
 prepare_paths() {
     local item
@@ -29,8 +33,15 @@ prepare_paths() {
     done
     mkdir -p "$TMP_DIR" "$TMP_DIR/leases" "$WORK" "$WORK/ctrl" || return 1
     chown 0:0 "$TMP_DIR" && chmod 751 "$TMP_DIR" || return 1
-    for item in "$TMP_DIR"/* "$WORK/entropy.bin" "$WORK/hostapd.conf"; do
+    # Inspect files this service writes, not unrelated leftovers in the directory.
+    # A previous debug kit may legitimately have left a link of its own here.
+    for item in daemon_stdout.log service-state.txt daemon.pid insmod.log hostapd_usb hostapd_usb.new hostapd.log dnsmasq.log hostapd.pid dnsmasq.pid hostapd.exit dnsmasq.exit; do
+        [ ! -L "$TMP_DIR/$item" ] || return 1
+        [ ! -e "$TMP_DIR/$item" ] || [ -f "$TMP_DIR/$item" ] || return 1
+    done
+    for item in "$WORK/entropy.bin" "$WORK/hostapd.conf" "$TMP_DIR/leases/dnsmasq.leases"; do
         [ ! -L "$item" ] || return 1
+        [ ! -e "$item" ] || [ -f "$item" ] || return 1
     done
     for item in "$WORK" "$WORK/ctrl" "$TMP_DIR/leases"; do
         chown 1010:1010 "$item" && chmod 700 "$item" || return 1
@@ -66,17 +77,26 @@ read_credentials() {
     [ "${#secret}" -ge 8 ] && [ "${#secret}" -le 63 ]
 }
 
+usb_family() {
+    local wanted=$1 ident family extra
+    [ -f "$APP_DIR/driver-ids" ] && [ ! -L "$APP_DIR/driver-ids" ] || return 1
+    while read -r ident family extra; do
+        [ "$ident" = "$wanted" ] && [ -z "$extra" ] || continue
+        case "$family" in 88x2bu|8851bu) echo "$family"; return 0;; esac
+    done < "$APP_DIR/driver-ids"
+    return 1
+}
+
 adapter_family() {
     local d v p match seen=
     for d in /sys/bus/usb/devices/*; do
         [ -r "$d/idVendor" ] && [ -r "$d/idProduct" ] || continue
-        IFS= read -r v < "$d/idVendor" || continue
-        IFS= read -r p < "$d/idProduct" || continue
+        v=; p=
+        IFS= read -r v < "$d/idVendor" || [ -n "$v" ] || continue
+        IFS= read -r p < "$d/idProduct" || [ -n "$p" ] || continue
         case "$v:$p" in
             0bda:1a2b) match=storage;;
-            *) match=$(grep -F "$v:$p " "$APP_DIR/driver-ids" 2>/dev/null) || continue
-               match=${match#* }
-               case "$match" in 88x2bu|8851bu) ;; *) continue;; esac;;
+            *) match=$(usb_family "$v:$p") || continue;;
         esac
         if [ -n "$seen" ]; then echo ambiguous; return; fi
         seen=$match
@@ -84,13 +104,41 @@ adapter_family() {
     echo "$seen"
 }
 
+driver_loaded() {
+    local wanted=$1 name rest
+    [ -r /proc/modules ] || return 1
+    while read -r name rest; do
+        [ "$name" != "$wanted" ] || return 0
+    done < /proc/modules
+    return 1
+}
+
 load_driver() {
     local family=$1
-    grep -q "^${family} " /proc/modules && return 0
+    case "$family" in 88x2bu|8851bu) ;; *) return 1;; esac
+    driver_loaded "$family" && return 0
+    echo "AP_DRIVER state=loading family=$family"
     if [ "$family" = 88x2bu ]; then
-        insmod "$VENDOR/modules/88x2bu.ko" ifname=rtwlan%d if2name=rtwlan%d rtw_power_mgnt=0 rtw_ips_mode=0 rtw_enusbss=0 rtw_en_napi=0 rtw_en_gro=0 >> "$TMP_DIR/insmod.log" 2>&1 && return 0
+        insmod "$VENDOR/modules/88x2bu.ko" ifname=rtwlan%d if2name=rtwlan%d rtw_power_mgnt=0 rtw_ips_mode=0 rtw_enusbss=0 rtw_en_napi=0 rtw_en_gro=0 >> "$TMP_DIR/insmod.log" 2>&1
     fi
-    insmod "$VENDOR/modules/$family.ko" ifname=rtwlan%d if2name=rtwlan%d >> "$TMP_DIR/insmod.log" 2>&1
+    if ! driver_loaded "$family"; then
+        insmod "$VENDOR/modules/$family.ko" ifname=rtwlan%d if2name=rtwlan%d >> "$TMP_DIR/insmod.log" 2>&1
+    fi
+    if driver_loaded "$family"; then
+        echo "AP_DRIVER state=ready family=$family"
+        return 0
+    fi
+    echo "AP_DRIVER state=failed family=$family"
+    return 1
+}
+
+preload_drivers() {
+    # Bind a dongle present during boot and one inserted later using the same
+    # path. Loading these pinned drivers does not configure any network interface.
+    # A missing/failed family must not prevent the other family from being used.
+    local family
+    ap_phase DRIVER_PRELOAD
+    for family in 88x2bu 8851bu; do load_driver "$family" || :; done
 }
 
 switch_storage() {
@@ -135,8 +183,11 @@ wpa=2
 rsn_pairwise=CCMP
 wpa_passphrase=$secret
 EOF
-    [ "$?" = 0 ] && chown 1010:1010 "$WORK/entropy.bin" "$WORK/hostapd.conf" &&
-        chmod 600 "$WORK/entropy.bin" "$WORK/hostapd.conf"
+    [ "$?" = 0 ] || return 1
+    local file
+    for file in "$WORK/entropy.bin" "$WORK/hostapd.conf"; do
+        chown 1010:1010 "$file" && chmod 600 "$file" || return 1
+    done
 }
 
 ensure_address() {
@@ -210,7 +261,11 @@ run_radio() {
     read_credentials || { ap_phase CONFIG_INVALID; return 1; }
     prepare_hostapd || { ap_phase HOSTAPD_PATCH_FAILED; return 1; }
     write_radio_config || { ap_phase AP_PERMISSION_FAILED; return 1; }
-    ap_active_identity && ip link set "$ACTIVE_IFACE" up || { ap_phase NETWORK_SETUP_FAILED; return 1; }
+    ap_active_identity || { ap_phase IDENTITY_REJECTED; return 1; }
+    if ! ip link set "$ACTIVE_IFACE" up; then
+        sleep 2
+        ap_active_identity && ip link set "$ACTIVE_IFACE" up || { ap_phase NETWORK_SETUP_FAILED; return 1; }
+    fi
     sleep 2
     ap_active_identity && ensure_address || { ap_phase NETWORK_SETUP_FAILED; return 1; }
     ap_phase HOSTAPD_STARTING
@@ -232,16 +287,20 @@ run_radio() {
 }
 
 [ "$(getprop ro.build.product)" = NEEV.KOR.0000.V039.001.260902 ] &&
-    [ "$(getprop ro.board.platform)" = tcc803x ] && [ "$(cat /proc/sys/kernel/osrelease)" = 3.18.24-tcc ] || exit 2
-[ ! -e "$BASE/use-existing-ap" ] || exit 3
-prepare_paths || exit 3
+    [ "$(getprop ro.board.platform)" = tcc803x ] && [ "$(cat /proc/sys/kernel/osrelease)" = 3.18.24-tcc ] || startup_fail TARGET_MISMATCH
+[ ! -e "$BASE/use-existing-ap" ] && [ ! -L "$BASE/use-existing-ap" ] || startup_fail EXISTING_AP_CONFLICT
+prepare_paths || startup_fail PREPARE_PATHS
 exec >> "$TMP_DIR/daemon_stdout.log" 2>&1
-check_assets || { ap_phase VENDOR_ASSETS_INVALID; exit 3; }
-echo $$ > "$TMP_DIR/daemon.pid" || exit 3
+echo 'AP_STARTUP version=1.0.1 phase=PRIVATE_LOG_READY'
+check_assets || { ap_phase VENDOR_ASSETS_INVALID; startup_fail VENDOR_ASSETS_INVALID; }
+echo $$ > "$TMP_DIR/daemon.pid" || startup_fail PID_WRITE
 ap_phase STARTING
 trap 'stop_radio; exit 0' HUP INT TERM
-ap_stop_children || { ap_phase STOP_TIMEOUT; exit 3; }
+ap_stop_children || { ap_phase STOP_TIMEOUT; startup_fail STOP_TIMEOUT; }
+preload_drivers
+ap_phase WAIT_ANDROID
 while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 2; done
+echo 'AP_STARTUP version=1.0.1 phase=ANDROID_READY' 
 while :; do
     if healthy_radio; then
         sleep 3 & wait $!

@@ -1,4 +1,4 @@
-NEEV USB CarPlay 1.0.0 소스 빌드
+NEEV USB CarPlay 1.0.1 소스 빌드
 
 USB 설치용 ZIP과 함께 배포되는 이 소스에는 CarPlay/턴바이턴, AP 실행기, 음소거 추가 모드, 설치·검증 코드, 라이선스와 차종별 지도가 들어 있습니다. maps의 파일은 도로 지도 대신 차량 클래스 및 메서드의 연결과 펌웨어 해시를 기술합니다. 코드를 수정하거나 재배포할 때 실제 배포 바이너리와 일치하는 소스와 고지문을 함께 제공하세요.
 
@@ -16,7 +16,7 @@ python3 tools/rebuild_usb.py --java-home /path/to/jdk-17 --android-jar /path/to/
 
 외부 의존성과 라이선스는 docs/THIRD-PARTY-NOTICES.txt, Wi-Fi 입력은 docs/EXTERNAL-INPUTS-KO.txt를 참조하세요. 소스 구성 파일들의 해시는 SOURCE-SHA256SUMS.txt에 있습니다.
 
-빌드한 USB의 설치 및 재실행 흐름은 python3 tests/test_joint.py /path/to/new-build/NEEV_260902_CarPlay_1.0.0_USB.zip 으로 로컬에서 시험합니다. 이 테스트는 차량과 NEMESIS 응답을 모의 처리합니다. 실제 동글과 아이폰 연결은 차량에서 따로 시험하세요.
+빌드한 USB의 설치 및 재실행 흐름은 python3 tests/test_joint.py /path/to/new-build/NEEV_260902_CarPlay_1.0.1_USB.zip 으로 로컬에서 시험합니다. 이 테스트는 차량과 NEMESIS 응답을 모의 처리합니다. 실제 동글과 아이폰 연결은 차량에서 따로 시험하세요.
 
 tests/HistoryTest.java는 합성 로그로 실제 Java 수집기의 시간·이벤트 추출과 개인정보 제외를 시험합니다. JDK 17의 javac와 java를 PATH에 두고 비어 있는 테스트 폴더에서 실행하세요. 아래 SRC를 이 소스를 푼 디렉터리의 절대 경로로 지정합니다.
 

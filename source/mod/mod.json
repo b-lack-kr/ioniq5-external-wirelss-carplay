@@ -1,9 +1,11 @@
 {
   "id": "neev-usb-carplay",
   "name": "IONIQ 5 USB CarPlay",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "hmgapi": ">=1.0.1",
-  "authors": ["by blackr"],
+  "authors": [
+    "by blackr"
+  ],
   "license": "AGPL-3.0",
   "description": "Wireless CarPlay over a compatible 5 GHz USB Wi-Fi adapter, with cluster and HUD guidance. Korean NEEV 260902 only.",
   "system": {

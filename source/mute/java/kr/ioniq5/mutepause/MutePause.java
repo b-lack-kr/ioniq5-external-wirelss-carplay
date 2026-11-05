@@ -15,11 +15,12 @@ import hmgapi.hook.MethodHook;
 import hmgapi.hook.ModContext;
 import hmgapi.hook.ModEntry;
 
-/** Two read-only, pre-existing KR hook points. Never consumes or injects a stock key. */
+/** Observe existing KR keys/session hooks; preserve stock input and track our own pause. */
 public final class MutePause extends ModEntry {
     static final String DIPO = "com.daudio.app.dipo";
     static final String ACTION = "kr.ioniq5.mutepause.MUTE_SHORT";
     private static final String REFRESH = "kr.ioniq5.mutepause.VOLUME_ADJUSTED";
+    private static final String MANUAL = "kr.ioniq5.mutepause.MANUAL_MEDIA";
     private static final String EVENT_TIME = "releaseUptime";
     private boolean watching, receiving;
     private final KeyStroke key = new KeyStroke();
@@ -48,6 +49,13 @@ public final class MutePause extends ModEntry {
                 if (!(p.args[0] instanceof KeyEvent)) return;
                 KeyEvent e = (KeyEvent)p.args[0];
                 int code = e.getKeyCode();
+                if (e.getDeviceId()>0 && e.getAction()==KeyEvent.ACTION_DOWN && e.getRepeatCount()==0
+                        && (code==KeyEvent.KEYCODE_MEDIA_PLAY || code==KeyEvent.KEYCODE_MEDIA_PAUSE
+                        || code==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || code==KeyEvent.KEYCODE_MEDIA_STOP
+                        || code==KeyEvent.KEYCODE_MEDIA_NEXT || code==KeyEvent.KEYCODE_MEDIA_PREVIOUS)) {
+                    main.post(new Runnable(){public void run(){if(mod.enabled())send(context,mod,MANUAL,-1);}});
+                    return;
+                }
                 // Adjusting the volume can unmute MICOM without another mute press.
                 if (code > 0 && (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN
                         || code == knobUp || code == knobDown)) {
@@ -91,18 +99,29 @@ public final class MutePause extends ModEntry {
             final PauseGate gate = new PauseGate(new PauseGate.Port() {
                 public Object service() throws Exception { return player.service(); }
                 public boolean muted(Object s) throws Exception { return player.muted(s); }
-                public boolean eligible(Object s) throws Exception { return mod.enabled() && player.eligible(s); }
+                public boolean safe(Object s) throws Exception { return mod.enabled() && player.safe(s); }
+                public boolean playing(Object s) throws Exception { return player.playing(s); }
                 public void pause(Object s) throws Exception { player.pause(s); mod.log("MUTE_PAUSE pause requested"); }
+                public void play(Object s) throws Exception { player.play(s); mod.log("MUTE_PAUSE resume requested"); }
                 public void later(Runnable r, long ms) { main.postDelayed(r,ms); }
                 public void failed(Exception e) { mod.error("mute state unavailable",e); }
             });
-            mod.hook(app.classLoader, "dipo.carplay.session_started", new MethodHook() {
+            for (String point:new String[]{"dipo.carplay.session_created","dipo.carplay.session_started"}) {
+                mod.hook(app.classLoader,point,new MethodHook(){
+                    @Override protected void afterHookedMethod(Param p) {
+                        // Revoke a previous session before its queued command can run.
+                        main.postAtFrontOfQueue(new Runnable(){public void run(){gate.initialize();}});
+                    }
+                });
+            }
+            mod.hook(app.classLoader,"dipo.carplay.session_finalized",new MethodHook(){
                 @Override protected void afterHookedMethod(Param p) {
-                    main.post(new Runnable(){ public void run(){ gate.initialize(); } });
+                    main.postAtFrontOfQueue(new Runnable(){public void run(){gate.reset();}});
                 }
             });
             IntentFilter actions=new IntentFilter(ACTION);
             actions.addAction(REFRESH);
+            actions.addAction(MANUAL);
             app.context.registerReceiver(new BroadcastReceiver() {
                 @Override public void onReceive(Context c, Intent intent) {
                     if (!mod.enabled()) return;
@@ -110,6 +129,8 @@ public final class MutePause extends ModEntry {
                         gate.release(intent.getLongExtra(EVENT_TIME,-1L),SystemClock.uptimeMillis());
                     } else if (REFRESH.equals(intent.getAction())) {
                         gate.refresh();
+                    } else if (MANUAL.equals(intent.getAction())) {
+                        gate.manualAction();
                     }
                 }
             },actions,"android.permission.INJECT_EVENTS",main);

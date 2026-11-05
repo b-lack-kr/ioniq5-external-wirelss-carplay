@@ -59,6 +59,26 @@ active_plan_ok() {
     grep -F -q 'hooks are off' "$1" && return 1
     return 0
 }
+# Confirm that HMG published both enabled startup services. The installation
+# USB occupies the dongle port, so AP readiness itself is not an install condition.
+startup_registered() {
+    absent "$MOD/.disabled" && regular "$H/state/services.txt" || return 1
+    registered_ap=0; registered_provider=0
+    : > "$R/services-wanted.txt" || return 1
+    while read service_mod name user start restart kind path cls extra; do
+        [ "$service_mod" = "$ID" ] || continue
+        echo "$service_mod $name $user $start $restart $kind $path $cls $extra" >> "$R/services-wanted.txt" || return 1
+        case "$name:$user:$start:$restart:$kind:$path:$cls:$extra" in
+            usb-ap:root:boot:yes:script:ap/service.sh:-:)
+                [ "$registered_ap" = 0 ] || return 1; registered_ap=1;;
+            ap-provider:root:android:yes:jar:provider.jar:kr.ioniq5.usbcp.Provider:)
+                [ "$registered_provider" = 0 ] || return 1; registered_provider=1;;
+            *) return 1;;
+        esac
+    done < "$H/state/services.txt"
+    /system/bin/hmgapid services "$ID" > "$R/services-after-install.txt" 2>&1 || :
+    [ "$registered_ap:$registered_provider" = 1:1 ]
+}
 SERVICE_GROUP_FILE="$R/service-groups-$boot.txt"
 record_group() {
     pid=$1
@@ -272,15 +292,17 @@ install() {
         rm -f "$B/apply-pending" || return 1
     fi
     check_plan clean "$R/final-plan.log" && active_plan_ok "$R/final-plan.log" && known_mod "$PUBLIC_MANIFEST" || return 1
-    echo 1.0.0 > "$W/UPGRADE_CURRENT.txt" && : > "$B/previously-installed" || return 1
+    startup_registered || { echo SERVICE_REGISTRATION_INVALID; return 1; }
+    echo 1.0.1 > "$W/UPGRADE_CURRENT.txt" && : > "$B/previously-installed" || return 1
     mark INSTALLED
     if [ "${NEEV_CP_BUNDLE:-0}" = 1 ]; then notice 'CarPlay 설치 완료. USB를 꽂아 두세요.'
-    else notice 'CarPlay 1.0.0 설치 완료. 동글 연결 후 내비를 재부팅하세요.'; fi
+    else notice 'CarPlay 1.0.1 설치 완료. 동글 연결 후 내비를 재부팅하세요.'; fi
 }
 current=$(cat "$R/STATUS")
 case "$current:$restore" in
-    INSTALLED:0) verify_public && [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.0 ] || stop INSTALLED_STATE_MISMATCH
-        notice 'CarPlay 1.0.0 설치 상태를 확인했습니다'; exit 0;;
+    INSTALLED:0) verify_public && [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.1 ] || stop INSTALLED_STATE_MISMATCH
+        startup_registered || stop SERVICE_REGISTRATION_INVALID
+        notice 'CarPlay 1.0.1 설치 상태를 확인했습니다'; exit 0;;
     INSTALLED:1)
         check_plan clean "$R/pre-restore-plan.log" || stop UNAPPLIED_OTHER_CHANGES
         rollback || stop RESTORE_REQUIRED; exit 0;;
@@ -296,7 +318,7 @@ case "$current:$restore" in
 esac
 preflight
 prepare
-notice 'CarPlay 1.0.0 설치 준비 완료'
+notice 'CarPlay 1.0.1 설치 준비 완료'
 if ! install; then
     rollback || stop RESTORE_REQUIRED
     stop INSTALL_FAILED_RESTORED

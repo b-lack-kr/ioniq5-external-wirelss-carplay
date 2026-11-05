@@ -23,7 +23,7 @@ def build_payload(mod, setup_jar, maps, target, vendor_dir, out, uuid=DEFAULT_UU
     meta = json.loads((mod/'mod.json').read_text())
     assert re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', uuid)
     assert signed['uuid'] == uuid and meta['id'] == signed['id'] == 'neev-usb-carplay'
-    assert meta['version'] == signed['version'] == '1.0.0'
+    assert meta['version'] == signed['version'] == '1.0.1'
     assert set(signed['files']) == {f.relative_to(mod).as_posix() for f in mod.rglob('*')
                                     if f.is_file() and 'META-HMGAPI' not in f.parts}
     assert all(not f.is_symlink() for f in mod.rglob('*'))

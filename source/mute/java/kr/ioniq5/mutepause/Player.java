@@ -6,7 +6,7 @@ import java.lang.reflect.Method;
 /** Bind all required symbols up front; the package installer pins the Korean DiPO ODEX. */
 final class Player {
     private final Method service, active, powerOff, audio, mode, owners, userMute, currentMode;
-    private final Method pendingIvr, telematics, siriFocus, phone, callStatus, speech, pause;
+    private final Method pendingIvr, telematics, siriFocus, phone, callStatus, speech, pause, play;
     private final Field playing;
 
     Player(ClassLoader cl) throws Exception {
@@ -16,22 +16,27 @@ final class Player {
         currentMode=mode.getReturnType().getMethod("getCurrentMode");
         userMute=audio.getReturnType().getMethod("getUserMuteState");
         pendingIvr=method(d,"fX"); telematics=method(d,"cN"); siriFocus=method(d,"ch"); pause=method(d,"pause");
+        // The pinned target sends Play immediately for k(true); play() delays it500ms.
+        play=method(d,"k",boolean.class);
         callStatus=method(owners.getReturnType(),"getCallStatus");
         phone=method(owners.getReturnType(),"getPhoneCall"); speech=method(owners.getReturnType(),"getSpeech");
         playing=d.getDeclaredField("go"); playing.setAccessible(true);
     }
 
-    private static Method method(Class<?> owner,String name) throws Exception {
-        Method m=owner.getDeclaredMethod(name); m.setAccessible(true); return m;
+    private static Method method(Class<?> owner,String name,Class<?>... parameters) throws Exception {
+        Method m=owner.getDeclaredMethod(name,parameters); m.setAccessible(true); return m;
     }
     Object service() throws Exception { return service.invoke(null); }
     boolean muted(Object s) throws Exception { return (Boolean)userMute.invoke(audio.invoke(s)); }
-    boolean eligible(Object s) throws Exception {
-        if (!(Boolean)active.invoke(s) || (Boolean)powerOff.invoke(s) || !playing.getBoolean(s)
+    boolean safe(Object s) throws Exception {
+        if (!(Boolean)active.invoke(s) || (Boolean)powerOff.invoke(s)
                 || (Boolean)pendingIvr.invoke(s) || (Boolean)telematics.invoke(s) || (Boolean)siriFocus.invoke(s)) return false;
         Object m=mode.invoke(s), own=owners.invoke(s);
         return m != null && own != null && ((Integer)currentMode.invoke(m))==115
                 && ((Integer)callStatus.invoke(own)) == 0 && ((Integer)phone.invoke(own)) != 1 && ((Integer)speech.invoke(own)) != 1;
     }
+    boolean playing(Object s) throws Exception { return playing.getBoolean(s); }
+    boolean eligible(Object s) throws Exception { return safe(s) && playing(s); }
     void pause(Object s) throws Exception { pause.invoke(s); }
+    void play(Object s) throws Exception { play.invoke(s,true); }
 }

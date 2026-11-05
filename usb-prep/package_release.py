@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package the 1.0.0 PC preparation tools alongside the exact, previously signed vehicle release."""
+"""Package the 1.0.1 PC preparation tools alongside the exact, previously signed vehicle release."""
 import argparse
 from hashlib import sha256
 from io import BytesIO
@@ -9,13 +9,13 @@ from tempfile import NamedTemporaryFile
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 BASE = Path(__file__).resolve().parent
-KIT = 'NEEV_260902_CarPlay_1.0.0_USB.zip'
-SRC = 'NEEV_260902_CarPlay_1.0.0_SOURCE.zip'
+KIT = 'NEEV_260902_CarPlay_1.0.1_USB.zip'
+SRC = 'NEEV_260902_CarPlay_1.0.1_SOURCE.zip'
 SIGNED = {
-    KIT: 'dbd330c1a68e58efb4030050e4948121deeba69f99d453398f4e6fe687a8caaa',
-    SRC: '4e54efbcda02cd24b94375d0cda7eab29eaf8fc638b26d6ed22f777e0af529c5',
+    KIT: '17f565786fba31b93ad38d5d5a5f383b9f8fe7d1fab1b9368baa8a08de3167c9',
+    SRC: '9ce1130b7e2507fce5c275558a5e4f80cc3b919bea5bf46d7765d813ab2dcf7c',
 }
-RELEASE_BASE = 'https://github.com/ssyeonn/ioniq5-external-wirelss-carplay/releases/download/v1.0.0'
+RELEASE_BASE = 'https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/download/v1.0.1'
 TOKEN = b'@CARPLAY_RELEASE_BASE@'
 MAC = 'USB-준비-macOS.command'
 CMD = 'Prepare-USB-Windows.cmd'
@@ -23,9 +23,9 @@ WIN = 'tools/Prepare-USB.ps1'
 VOLUME = 'tools/WindowsUsbVolume.ps1'
 GUIDE = '사용안내.txt'
 SUMS = 'SHA256SUMS.txt'
-MAC_ZIP = 'Prepare-USB-macOS-v1.0.0.zip'
-WIN_ZIP = 'Prepare-USB-Windows-v1.0.0.zip'
-COMBINED = 'NEEV_260902_CarPlay_1.0.0_by_blackr.zip'
+MAC_ZIP = 'Prepare-USB-macOS-v1.0.1.zip'
+WIN_ZIP = 'Prepare-USB-Windows-v1.0.1.zip'
+COMBINED = 'NEEV_260902_CarPlay_1.0.1_by_blackr.zip'
 
 
 def require(test, message):
@@ -131,13 +131,13 @@ def main():
     parser.add_argument('--source-dir', type=Path, default=BASE / 'source')
     parser.add_argument('--assets-dir', type=Path, default=BASE / 'assets-carplay')
     parser.add_argument('--publish-folder', type=Path,
-                        help='Also put the combined ZIP here and its unpacked files in the 1.0.0 subfolder')
+                        help='Also put the combined ZIP here and its unpacked files in the 1.0.1 subfolder')
     args = parser.parse_args()
     contents, assets = build(args.signed_dir, args.source_dir)
     publish_folder(args.assets_dir, assets)
     if args.publish_folder:
         require(not args.publish_folder.is_symlink(), 'Refusing to publish releases through a symbolic link')
-        publish_folder(args.publish_folder / '1.0.0', contents)
+        publish_folder(args.publish_folder / '1.0.1', contents)
         put(args.publish_folder, COMBINED, assets[COMBINED])
     print(f'Verified release assets: {args.assets_dir}')
     print(assets[SUMS].decode(), end='')

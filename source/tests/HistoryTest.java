@@ -84,6 +84,18 @@ public final class HistoryTest {
         long started=System.nanoTime();
         check(History.collect(timeoutOut,ap,provider,slow)==7 && read(timeoutOut,"history-status.txt").contains("carplay=TIMEOUT"));
         check((System.nanoTime()-started)/1000000 < 7200);
+        File supervisor=file(root,"usb-ap.log","AP_STARTUP version=1.0.1 phase=ENTRY\n"+
+                "AP_STARTUP_FAILURE reason=PREPARE_PATHS\nAP_DRIVER state=ready family=88x2bu\n"+
+                "AP_DRIVER state=ready family=88x2bu SECRET\ncredential=PRIVATE\n");
+        File services=file(root,"services.status","neev-usb-carplay usb-ap running 123 0\n"+
+                "neev-usb-carplay ap-provider waiting 0 0\nother secret PRIVATE\n");
+        File modules=file(root,"modules","88x2bu 1234 0 - Live 0xffffffff\nother PRIVATE 0\n");
+        File bootOut=result(root,6);
+        History.boot(bootOut,supervisor,services,modules);
+        check(read(bootOut,"boot-supervisor.txt").contains("reason=PREPARE_PATHS"));
+        check(read(bootOut,"boot-services.txt").split("\n").length==2);
+        check(read(bootOut,"boot-drivers.txt").equals("88x2bu LOADED\n"));
+        for(File f:bootOut.listFiles())check(!read(bootOut,f.getName()).contains("PRIVATE")&&!read(bootOut,f.getName()).contains("SECRET"));
         System.out.println("HistoryTest PASS: source and prefix ownership, strict categories, caps, rotated files, redaction, no overwrite, missing, failure and timeout");
     }
 }

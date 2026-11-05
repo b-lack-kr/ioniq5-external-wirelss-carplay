@@ -6,9 +6,9 @@ Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $release = [IO.Directory]::GetParent($PSScriptRoot).FullName
-$usbZip = 'NEEV_260902_CarPlay_1.0.0_USB.zip'
+$usbZip = 'NEEV_260902_CarPlay_1.0.1_USB.zip'
 $releaseUrl = '@CARPLAY_RELEASE_BASE@' + '/' + $usbZip
-$usbHash = 'dbd330c1a68e58efb4030050e4948121deeba69f99d453398f4e6fe687a8caaa'
+$usbHash = '17f565786fba31b93ad38d5d5a5f383b9f8fe7d1fab1b9368baa8a08de3167c9'
 $upstream = 'HKG_5W_USBWifi_Hotspot.zip'
 $upHash = '7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7'
 $upUrl = 'https://github.com/GRT47/HKG_5W_USB_Wlan/releases/download/v2.0.2/HKG_5W_USBWifi_Hotspot.zip'
@@ -34,7 +34,7 @@ function Open-VerifiedZip([string]$file, [string]$digest) {
     $stream = [IO.File]::OpenRead($file)
     try {
         if ((Get-FileHash -InputStream $stream -Algorithm SHA256).Hash -ne $digest) {
-            throw "파일이 지정된 1.0.0 배포본과 일치하지 않습니다: $([IO.Path]::GetFileName($file))"
+            throw "파일이 지정된 1.0.1 배포본과 일치하지 않습니다: $([IO.Path]::GetFileName($file))"
         }
         $stream.Position = 0
         return [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Read)
@@ -77,7 +77,7 @@ $kit = $null
 $work = $null
 $result = 0
 try {
-    Write-Host 'CarPlay 1.0.0 by blackr - 설치 파일 확인 중'
+    Write-Host 'CarPlay 1.0.1 by blackr - 설치 파일 확인 중'
     $newWork = Join-Path $release ('.prepare-usb-' + [Guid]::NewGuid().ToString('N'))
     [void](New-Item -ItemType Directory -Path $newWork)
     $work = $newWork

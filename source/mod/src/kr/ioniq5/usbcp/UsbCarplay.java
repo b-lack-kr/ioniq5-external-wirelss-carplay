@@ -22,7 +22,7 @@ public final class UsbCarplay extends ModEntry {
     @Override public void zygoteInit(ModContext m) throws Throwable {
         if(!Provider.PRODUCT.equals(Provider.property("ro.build.product")) || !"tcc803x".equals(Provider.property("ro.board.platform")))
             throw new IllegalStateException("USB_CP_WRONG_TARGET");
-        m.log("USB_CP_ZYGOTE_READY version=1.0.0");
+        m.log("USB_CP_ZYGOTE_READY version=1.0.1");
     }
     @Override public void appLoaded(final ModContext m, final LoadedApp a) throws Throwable {
         if (a.context != null && "com.mnsoft.navi".equals(a.packageName)) {

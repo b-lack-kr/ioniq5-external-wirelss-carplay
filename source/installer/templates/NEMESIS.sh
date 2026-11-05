@@ -6,7 +6,7 @@ umask 077
 USB=${0%/*}; [ "$USB" != "$0" ] || USB=$PWD
 USB=$(cd "$USB" && pwd -P) || exit 2
 W=/data/nemesis/neev-usbcp
-R=$W/public-1.0.0
+R=$W/public-1.0.1
 H=/data/hmgapi
 ID=neev-usb-carplay
 MOD=$H/mods/$ID
@@ -33,13 +33,18 @@ check_kit() {
         regular "$1/$path" && [ "$(hash "$1/$path")" = "$digest" ] || return 1
     done < "$1/MANIFEST.md5"
 }
-# Reruns and recovery must use the verified local transaction, including
-# the original 1.0.0 whose signer is unchanged and whose metadata predates branding.
-check_recorded_kit() {
-    if regular "$R/kit/MANIFEST.md5" && [ "@OWNER@" = "bd5f651c-38f9-8ef4-827c-34ad706c2b5c" ] &&
-        [ "$(hash "$R/kit/MANIFEST.md5")" = 38eac52adfc6d6d719e64c1da2957dbf ]; then
-        check_kit "$R/kit" 38eac52adfc6d6d719e64c1da2957dbf
-    else check_kit "$R/kit"; fi
+# A rerun or restore executes only this exact release's verified transaction.
+check_recorded_kit() { check_kit "$R/kit"; }
+# Completed 1.0.0 installs can be parked after the owner removes the mod.
+# Do not execute their old scripts: verify the complete pinned kit and signature.
+check_removed_100_kit() {
+    [ "@OWNER@" = "bd5f651c-38f9-8ef4-827c-34ad706c2b5c" ] || return 1
+    regular "$1/MANIFEST.md5" || return 1
+    case "$(hash "$1/MANIFEST.md5")" in
+        70667411818e14d545a013085330c391) check_kit "$1" 70667411818e14d545a013085330c391;;
+        38eac52adfc6d6d719e64c1da2957dbf) check_kit "$1" 38eac52adfc6d6d719e64c1da2957dbf;;
+        *) return 1;;
+    esac
 }
 check_kit "$PACK" || stop INVALID_USB_PACKAGE
 [ "$(/system/bin/hmgapid version)" = 'hmgapid 1.0.1' ] && /system/bin/hmgapid ping >/dev/null || stop HMG_API_101_REQUIRED
@@ -84,11 +89,21 @@ verify_removed_source() {
 verify_removed_workspace() {
     regular "$W/UPGRADE_CURRENT.txt" || return 1
     version=$(cat "$W/UPGRADE_CURRENT.txt")
-    if dir "$R"; then
-        [ "$version" = 1.0.0 ] && regular "$R/STATUS" && [ "$(cat "$R/STATUS")" = INSTALLED ] &&
-            regular "$R/mode" && dir "$R/kit/payload" && check_recorded_kit || return 1
-        case "$(cat "$R/mode")" in 'fresh'|'0.1.10'|'0.1.11') ;; *) return 1;; esac
-        verify_removed_source "$R/kit/payload/mod" "$(hash "$R/kit/payload/mod/META-HMGAPI/manifest.json")"
+    case "$version" in
+        1.0.1)
+            record=$R
+            dir "$record" && check_recorded_kit || return 1;;
+        1.0.0)
+            absent "$R" || return 1
+            record=$W/public-1.0.0
+            dir "$record" && check_removed_100_kit "$record/kit" || return 1;;
+        *) record=;;
+    esac
+    if [ -n "$record" ]; then
+        regular "$record/STATUS" && [ "$(cat "$record/STATUS")" = INSTALLED ] &&
+            regular "$record/mode" && dir "$record/kit/payload" || return 1
+        case "$(cat "$record/mode")" in 'fresh'|'0.1.10'|'0.1.11') ;; *) return 1;; esac
+        verify_removed_source "$record/kit/payload/mod" "$(hash "$record/kit/payload/mod/META-HMGAPI/manifest.json")"
         return
     fi
     absent "$R" && regular "$W/BACKUP_COMPLETE" && regular "$W/MANIFEST.md5" &&
@@ -153,6 +168,9 @@ if [ "$restore" = 0 ] && dir "$W" && absent "$MOD"; then
 fi
 if ! dir "$R"; then
     [ "$restore" = 0 ] || stop NO_PUBLIC_INSTALL
+    if dir "$MOD" && regular "$W/UPGRADE_CURRENT.txt" && [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.0 ]; then
+        stop UNINSTALL_1_0_0_FIRST
+    fi
     if absent "$W"; then
         absent "$MOD" || stop UNOWNED_INSTALLED_MOD
         mode=fresh
@@ -179,7 +197,7 @@ if ! dir "$R"; then
     echo "$mode" > "$STAGE/mode" && echo PREPARED > "$STAGE/STATUS" && sync || stop STAGING
     if [ "$mode" = fresh ]; then
         FRESH="/data/nemesis/.neev-fresh-$boot-$$"
-        absent "$FRESH" && mkdir "$FRESH" && mv "$STAGE" "$FRESH/public-1.0.0" && absent "$W" && mv "$FRESH" "$W" || stop STAGING
+        absent "$FRESH" && mkdir "$FRESH" && mv "$STAGE" "$FRESH/public-1.0.1" && absent "$W" && mv "$FRESH" "$W" || stop STAGING
     else mv "$STAGE" "$R" || stop STAGING; fi
 fi
 check_recorded_kit && regular "$R/mode" && regular "$R/STATUS" || stop LOCAL_TRANSACTION_DAMAGED

@@ -27,7 +27,7 @@ def readzip(src):
 
 def verify_contents(files, mod_id, owner):
     signed=json.loads(files['META-HMGAPI/manifest.json'])
-    assert signed['id']==mod_id and signed['version']=='1.0.0' and signed['uuid']==owner
+    assert signed['id']==mod_id and signed['version']==('1.0.1' if mod_id=='neev-usb-carplay' else '1.1.0') and signed['uuid']==owner
     assert {n:sha(v) for n,v in files.items() if not n.startswith('META-HMGAPI/')}==signed['files']
     assert files['META-HMGAPI/signature']
 

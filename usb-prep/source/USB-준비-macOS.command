@@ -13,13 +13,13 @@ case "$#:${1:-}" in
     *) stop '사용법: USB-준비-macOS.command [--prepare-only]' ;;
 esac
 folder=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P)
-kit_name=NEEV_260902_CarPlay_1.0.0_USB.zip
+kit_name=NEEV_260902_CarPlay_1.0.1_USB.zip
 release_base='@CARPLAY_RELEASE_BASE@'
 cache="$folder/HKG_5W_USBWifi_Hotspot.zip"
 ready="$folder/USB_READY"
 member=packages/usbwifi.hotspot.zip
 url=https://github.com/GRT47/HKG_5W_USB_Wlan/releases/download/v2.0.2/HKG_5W_USBWifi_Hotspot.zip
-kit_sha=dbd330c1a68e58efb4030050e4948121deeba69f99d453398f4e6fe687a8caaa
+kit_sha=17f565786fba31b93ad38d5d5a5f383b9f8fe7d1fab1b9368baa8a08de3167c9
 upstream_sha=7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7
 member_sha=d9077ba275398c1578444fdea479a5675e21f1b36f9ad3217e57b65aeadc512b
 
@@ -36,7 +36,7 @@ download() {
         --output "$2" "$1"
 }
 
-printf '%s\n' '아이오닉 5 USB 무선 CarPlay 1.0.0 · by blackr'
+printf '%s\n' '아이오닉 5 USB 무선 CarPlay 1.0.1 · by blackr'
 work=$(/usr/bin/mktemp -d "$folder/.neev-usb.XXXXXXXX") || stop '압축을 푼 폴더에 쓸 수 없습니다. 다른 폴더로 옮겨 다시 실행하세요.'
 trap '/bin/rm -rf "$work"' 0
 trap 'exit 1' HUP INT TERM
@@ -46,9 +46,9 @@ if exists "$folder/$kit_name"; then
     [ -f "$folder/$kit_name" ] && [ ! -L "$folder/$kit_name" ] && cp "$folder/$kit_name" "$kit" || stop '옆에 있는 설치 ZIP을 읽지 못했습니다.'
 else
     printf '%s\n' 'by blackr 공식 릴리스에서 CarPlay 설치 파일을 받는 중입니다…'
-    download "$release_base/$kit_name" "$kit" || stop 'CarPlay 1.0.0 설치 파일을 받을 수 없습니다. 인터넷 연결을 확인하고 다시 실행하세요.'
+    download "$release_base/$kit_name" "$kit" || stop 'CarPlay 1.0.1 설치 파일을 받을 수 없습니다. 인터넷 연결을 확인하고 다시 실행하세요.'
 fi
-matches "$kit" "$kit_sha" || stop '설치 ZIP 검증에 실패했습니다. 1.0.0 공식 배포본을 확인하세요.'
+matches "$kit" "$kit_sha" || stop '설치 ZIP 검증에 실패했습니다. 1.0.1 공식 배포본을 확인하세요.'
 mkdir "$stage"
 unzip -q "$kit" -d "$stage" || stop '설치 ZIP을 풀지 못했습니다.'
 
@@ -85,7 +85,7 @@ else
     [ -d "$ready" ] && [ ! -L "$ready" ] || conflict
     special=$(find "$ready" ! -type f ! -type d -print -quit) || conflict
     [ -z "$special" ] && diff -qr "$stage" "$ready" >/dev/null || conflict
-    printf '%s\n' '기존 USB_READY가 1.0.0 준비 파일과 일치합니다.'
+    printf '%s\n' '기존 USB_READY가 1.0.1 준비 파일과 일치합니다.'
 fi
 printf '\n%s\n%s\n' "$ready" 'USB_READY를 열고 안에 있는 항목 5개를 빈 USB 메모리의 최상위에 복사하세요.'
 exit 0
