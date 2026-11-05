@@ -151,7 +151,6 @@ eligible_volume() {
         [ "$(plist "$volume_info" DeviceIdentifier)" = "$volume_id" ] &&
         [ "$(plist "$volume_info" DeviceNode)" = "/dev/$volume_id" ] &&
         [ "$(plist "$volume_info" Internal)" = false ] &&
-        [ "$(plist "$volume_info" Mounted)" = true ] &&
         [ "$(plist "$volume_info" WritableVolume)" = true ] || return 1
     volume_fs=$(plist "$volume_info" FilesystemType) || return 1
     case "$volume_fs" in msdos|exfat) ;; *) return 1;; esac
@@ -165,6 +164,8 @@ eligible_volume() {
     case "$volume_bytes" in ''|0|*[!0-9]*) return 1;; esac
     [ "$volume_bytes" -ge 16777216 ] || return 1
     volume_uuid=$(plist "$volume_info" VolumeUUID) || return 1
+    # diskutil info -plist need not include a Mounted key. A real mount point
+    # and its backing device are verified below instead.
     volume_mount=$(plist "$volume_info" MountPoint) || return 1
     volume_label=$(plist "$volume_info" VolumeName) || return 1
     [ -n "$volume_uuid" ] && [ -n "$volume_label" ] || return 1
@@ -316,6 +317,18 @@ closedir($remaining) or die "Cannot close final USB listing: $!\n";
 close($root) or die "Cannot close pinned USB root: $!\n";
 PERL_CLEAN_USB
 here_check || stop 'USB 연결이 바뀌어 복사를 중단했습니다.'
+clean_install_metadata() {
+    here_check || return 1
+    # macOS can add provenance AppleDouble files even to streamed writes on
+    # exFAT. Clean only the installation trees and the volume top level.
+    # No -s: never follow symbolic links; keep native data and remove sidecars.
+    for tree in NEEV_CP packages; do
+        [ -d "$tree" ] && [ ! -L "$tree" ] || return 1
+        /usr/sbin/dot_clean -m --keep=native "$tree" || return 1
+    done
+    /usr/sbin/dot_clean -f -m --keep=native . || return 1
+    here_check
+}
 # Stream approved members without Finder metadata; publish the trigger only last.
 unzip -Z1 "$kit" > "$work/paths"
 printf '%s\n' "$member" >> "$work/paths"
@@ -325,6 +338,7 @@ while IFS= read -r name; do
     (set -C; cat "$stage/$name" > "$name") || stop 'USB 파일 복사에 실패했습니다.'
 done < "$work/paths"
 sync
+clean_install_metadata || stop 'macOS 보조 파일을 정리하지 못했습니다. 설치 파일 검증을 중단합니다.'
 for root in NEEV_CP packages; do diff -qr "$stage/$root" "$root" >/dev/null || stop 'USB 파일 검증에 실패했습니다.'; done
 for root in NEMESIS.sh NEEV_CP_INSTALL.sh; do cmp -s "$stage/$root" "$root" || stop 'USB 실행 파일 검증에 실패했습니다.'; done
 here_check || stop 'USB 연결이 바뀌어 설치 항목을 등록하지 않았습니다.'
@@ -332,4 +346,5 @@ marker=.neev-descriptor-$$
 ! exists "$marker" && ! exists NEMESIS.data || stop 'USB 설치 지시 파일이 이미 있습니다.'
 cat "$stage/NEMESIS.data" > "$marker" && cmp -s "$stage/NEMESIS.data" "$marker" && mv "$marker" NEMESIS.data && sync &&
     cmp -s "$stage/NEMESIS.data" NEMESIS.data || stop 'USB 설치 지시 파일 검증에 실패했습니다.'
+clean_install_metadata || stop 'macOS 보조 파일 정리를 마치지 못했습니다. USB를 추출하기 전에 다시 준비하세요.'
 printf '\n%s\n' '완료. 기존 USB 형식과 파티션을 유지한 채 31개 설치 파일을 확인했습니다. Finder에서 USB를 추출한 뒤 차량에 꽂으세요.'

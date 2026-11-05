@@ -19,6 +19,7 @@ Windows에서는 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Pre
 USB_READY 안의 5개 항목을 빈 USB 최상위에 복사합니다. 같은 폴더에 있는 차량용 ZIP을 사용할 수 있으며, 없으면 공식 릴리스에서 받습니다. 동글 파일은 GRT47 v2.0.2 원본을 공식 GitHub에서 받고 해시를 확인합니다.
 
 2026-11-05 준비 도구 수정: 버전은 1.0.1을 유지합니다. 이전에 받은 준비 도구 ZIP은 다시 다운로드하세요. 차량용 CarPlay·음소거 설치 파일은 변경하지 않았습니다.
+Mac의 USB 목록 인식 오류와 exFAT의 ._ 보조 파일로 인한 검증 실패를 수정했습니다. 실제 USB에서 파일 삭제·복사·31개 원본 해시 일치와 기존 파티션·볼륨 정보 유지를 확인했습니다.
 
 기존 설치
 CarPlay1.0.0이 설치돼 있으면 CarPlay 패키지를 Uninstall하고 HMG-API에 남은 Apply changes를 적용한 뒤 내비를 재부팅하세요. NEMESIS와 HMG-API 자체는 유지합니다.
