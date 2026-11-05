@@ -7,12 +7,18 @@ IONIQ 5 USB 무선 CarPlay 1.0.1 · by blackr
 USB 준비
 1. 운영체제에 맞는 준비 도구 ZIP을 PC에 풉니다. USB 내용을 먼저 백업하세요.
 2. Mac은 USB-준비-macOS.command를 실행하고, Windows는 Prepare-USB-Windows.cmd를 관리자 권한으로 실행합니다.
-3. 표시된 장치의 이름과 용량을 확인하여 USB를 선택합니다. 확인 문구를 직접 입력하면 해당 USB가 포맷되고 설치 파일이 들어갑니다.
+3. 표시된 드라이브의 이름과 용량을 확인하여 USB 볼륨을 선택합니다. 확인 문구를 직접 입력하면 선택한 볼륨의 기존 파일·폴더를 삭제하고 설치 파일을 넣습니다. 파티션 생성·포맷을 하지 않으며 파일시스템과 볼륨 이름을 유지합니다. 볼륨이 여러 개면 선택한 볼륨만 정리합니다.
 4. 31개 파일 검증을 마치면 안전하게 추출합니다. 차량에서는 인터넷 연결이 필요 없습니다.
 
-포맷 없이 파일만 만들려면 Mac에서 /bin/sh USB-준비-macOS.command --prepare-only 실행.
+FAT32 또는 exFAT로 이미 사용 중인 USB 볼륨을 선택하세요. 지원하지 않는 파일시스템은 도구가 변환하지 않습니다. 다운로드와 준비 파일 검증을 마친 뒤 USB 내용을 삭제하며, 숨김 파일과 이전 설치 기록도 삭제되므로 먼저 백업하세요.
+
+운영체제 관리 폴더 예외: Mac은 USB 최상위의 .Spotlight-V100, .fseventsd, .Trashes를, Windows는 System Volume Information을 남깁니다. 해당 폴더의 접근 권한을 강제로 변경하지 않습니다. 그 밖의 기존 파일·폴더를 지우지 못하면 설치 준비를 중단합니다.
+
+PC에 파일만 만들려면 Mac에서 /bin/sh USB-준비-macOS.command --prepare-only 실행.
 Windows에서는 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Prepare-USB.ps1 -PrepareOnly 실행.
 USB_READY 안의 5개 항목을 빈 USB 최상위에 복사합니다. 같은 폴더에 있는 차량용 ZIP을 사용할 수 있으며, 없으면 공식 릴리스에서 받습니다. 동글 파일은 GRT47 v2.0.2 원본을 공식 GitHub에서 받고 해시를 확인합니다.
+
+2026-11-05 준비 도구 수정: 버전은 1.0.1을 유지합니다. 이전에 받은 준비 도구 ZIP은 다시 다운로드하세요. 차량용 CarPlay·음소거 설치 파일은 변경하지 않았습니다.
 
 기존 설치
 CarPlay1.0.0이 설치돼 있으면 CarPlay 패키지를 Uninstall하고 HMG-API에 남은 Apply changes를 적용한 뒤 내비를 재부팅하세요. NEMESIS와 HMG-API 자체는 유지합니다.

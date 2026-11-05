@@ -115,7 +115,7 @@ try {
     Write-Host "준비 완료 (31개 파일 확인): $ready"
     if (!$PrepareOnly) {
         . (Join-Path $PSScriptRoot 'WindowsUsbVolume.ps1')
-        Start-UsbFormatter
+        Start-UsbFileRefresh
     }
 } catch {
     [Console]::Error.WriteLine("준비 실패: $($_.Exception.Message)")
