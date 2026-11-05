@@ -1,0 +1,30 @@
+name: Windows USB preparation
+on:
+  push:
+    paths:
+      - 'usb-prep/**'
+      - '.github/workflows/windows-usb.yml'
+  pull_request:
+    paths:
+      - 'usb-prep/**'
+      - '.github/workflows/windows-usb.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-powershell:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Windows PowerShell 5.1 - FAT32 and exFAT GUID paths
+        shell: powershell
+        run: ./usb-prep/tests/test_windows_volume.ps1 -Script ./usb-prep/source/tools/WindowsUsbVolume.ps1
+  powershell-core:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: PowerShell 7 - FAT32 and exFAT GUID paths
+        shell: pwsh
+        run: ./usb-prep/tests/test_windows_volume.ps1 -Script ./usb-prep/source/tools/WindowsUsbVolume.ps1

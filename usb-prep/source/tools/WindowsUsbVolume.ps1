@@ -179,9 +179,56 @@ function Assert-UsbPayloadTree([string]$root, [switch]$WithoutDescriptor) {
     if ($plan.Files.Count -ne $count) { throw 'USB 설치 파일 일부가 빠졌습니다.' }
 }
 
+function Initialize-UsbDirectoryApi {
+    if ('CarPlay.UsbDirectory' -as [type]) { return }
+    # .NET Framework recursively walks above a Volume{GUID} root while
+    # creating directories. Use the Unicode Win32 API one component at a time.
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+namespace CarPlay {
+    public static class UsbDirectory {
+        [DllImport("kernel32.dll", EntryPoint = "CreateDirectoryW", CharSet = CharSet.Unicode,
+            ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreateDirectory(string path, IntPtr securityAttributes);
+
+        public static void Create(string path) {
+            if (CreateDirectory(path, IntPtr.Zero)) return;
+            int error = Marshal.GetLastWin32Error();
+            if (error != 183) throw new Win32Exception(error, "USB directory: " + path);
+        }
+    }
+}
+'@
+}
+
+function New-UsbPayloadParent([string]$root, [string]$relativeFile) {
+    # Work only with manifest components; never derive the parent of the GUID
+    # root with GetDirectoryName (which drops its required trailing slash).
+    $parts = $relativeFile.Replace('\','/').Split([char]'/')
+    foreach ($part in $parts) {
+        if ([string]::IsNullOrWhiteSpace($part) -or $part -in '.','..' -or
+            $part.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0) {
+            throw "USB 설치 파일 경로가 잘못되었습니다: $relativeFile"
+        }
+    }
+    Assert-PlainUsbPath $root $root
+    $parent = $root
+    for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+        $parent = [IO.Path]::Combine($parent,$parts[$i])
+        Assert-PlainUsbPath $root $parent -AllowMissing
+        [CarPlay.UsbDirectory]::Create($parent)
+        Assert-PlainUsbPath $root $parent
+        if (![IO.Directory]::Exists($parent)) { throw "USB 폴더를 만들 수 없습니다: $parent" }
+    }
+}
+
 function Write-SelectedVolume($selected, [uint32[]]$protectedDisks) {
     # All downloads and source verification finish before old user files are removed.
     Assert-ReadyTree $ready
+    Initialize-UsbDirectoryApi
     $current = Confirm-UsbIdentity $selected $protectedDisks
     $root = $current.VolumePath
     if (![IO.Directory]::Exists($root)) { throw '이 Windows에서 선택한 USB 볼륨 경로를 열 수 없습니다.' }
@@ -191,8 +238,7 @@ function Write-SelectedVolume($selected, [uint32[]]$protectedDisks) {
         if ($name -ceq 'NEMESIS.data') { continue }
         $dest = [IO.Path]::Combine($root,$name.Replace([char]'/',[IO.Path]::DirectorySeparatorChar))
         Assert-PlainUsbPath $root $dest -AllowMissing
-        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($dest))
-        Assert-PlainUsbPath $root ([IO.Path]::GetDirectoryName($dest))
+        New-UsbPayloadParent $root $name
         [IO.File]::Copy([IO.Path]::Combine($ready,$name),$dest,$false)
         Assert-DeviceFile $dest $expected[$name]
     }
