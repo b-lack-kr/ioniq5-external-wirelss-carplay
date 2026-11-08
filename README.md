@@ -4,7 +4,7 @@
 
 한국형 아이오닉5 Gen5W에서 호환되는 5GHz USB Wi-Fi 동글로 무선 CarPlay를 연결합니다. 대상은 `NEEV.KOR.S5W_M.V039.001.260902` / `tcc803x`이며, NEMESIS와 **HMG-API 1.0.1 이상**, 활성화된 Hooks가 필요합니다. HMG-API 1.0.2를 사용 중이면 그대로 유지하세요. 기준 차량은 2023MY `NE1AE.S5BMC.KR`, 기준 동글은 Archer T3U Nano입니다.
 
-음소거 1.1.0이 함께 설치되던 1.0.1과 달리, **1.0.2에서는 음소거 일시정지·자동 재생을 별도로 설치**합니다. 음소거 패키지는 CarPlay의 필수 조건이 아닙니다.
+음소거 1.1.0이 함께 설치되던 1.0.1과 달리, **1.0.2에서는 음소거 일시정지·자동 재생을 별도로 설치**합니다. 이미 설치되어 있다면 유지됩니다. 기존 1.0.1 사용자는 음소거 패키지를 따로 삭제하지 않으면 그대로 사용할 수 있습니다.
 
 ## 다운로드
 
@@ -41,20 +41,18 @@ FAT32 또는 exFAT USB를 사용하세요. 여러 볼륨이 있으면 선택한 
 
 ## 음소거·자동 재생 별도 설치
 
-원하는 경우 [음소거 1.1.1 릴리스](https://github.com/b-lack-kr/ioniq5-carplay-mute-pause/releases/tag/v1.1.1)의 **Assets**에서 **`IONIQ5_CarPlay_Mute_Pause_1.1.1_USB.zip`**을 받으세요. USB의 CarPlay 설치 파일과 로그를 백업하고 기존 설치 파일을 정리한 뒤, 압축 안의 `NEMESIS.data`와 `packages`를 USB 최상위에 복사합니다. `packages` 안의 ZIP은 풀지 않습니다. 차량에 꽂아 **Yes → Operation completed successfully**를 확인하고 내비를 재부팅합니다.
+원하는 경우 [음소거 1.1.1 릴리스](https://github.com/b-lack-kr/ioniq5-carplay-mute-pause/releases/tag/v1.1.1)의 **Assets**에서 **`IONIQ5_CarPlay_Mute_Pause_1.1.1_USB.zip`**을 받으세요. USB의 CarPlay 설치 파일과 로그를 백업하고 기존 설치 파일을 정리한 뒤, 압축 안의 `NEMESIS.data`와 `packages`를 USB 최상위에 복사합니다. `packages` 안의 ZIP은 풀지 않습니다. 차량에 꽂아 **Yes → Operation completed successfully**를 확인하고 내비를 재부팅합니다. **CarPlay 패키지 설치 후 바로 재부팅하지 않고, 음소거 패키지까지 설치한 후 동글을 꽂고 한 번에 재부팅해도 됩니다.**
 
 기존 음소거 1.0.0·1.1.0은 삭제하지 않고 1.1.1로 업데이트하세요. 1.1.1은 HMG-API 1.0.1 이상을 허용하며 CarPlay 본체를 다시 설치할 필요가 없습니다. 이 기능은 **CarPlay 전용**으로 Android Auto는 지원하지 않습니다. [음소거 설치·제거 안내](https://github.com/b-lack-kr/ioniq5-carplay-mute-pause#설치업데이트제거)를 참고하세요.
 
-## 포함 기능
+## 1.0.2 변경점
 
-- 5GHz 외부 USB Wi-Fi 동글과 무선 CarPlay. 정상 부팅·연결 대기 팝업은 표시하지 않습니다.
-- 음악과 내비 안내 음성의 차량 음량 제어.
-- CarPlay 회전 안내·남은 거리·입력 기반 차선 안내를 계기판/HUD에 전달.
-- 일반 회전 AR 전환 기준은 CarPlay/Android Auto 공통 300m. AR 표시 기본값은 OFF입니다.
-- 초기 거리 미수신을 0m로 표시하던 경로 개선, 차선 교차로 거리와 다음 회전 거리의 분리.
-- 차량 차속을 CarPlay 위치 입력의 속도 필드에 반영. 좌표·시각·방향은 유지합니다.
-- 굿바이 시작에 동글 AP를 종료하고 웰컴 시작에 재연결 준비. USB 단자의 물리 5V를 차단하는 기능은 아닙니다.
-- 제한된 연결·전원·영상·TBT 진단을 저장. **같은 공개 1.0.2 설치 USB를 다시 꽂고 Yes를 누르면 재설치 대신 로그를 수집**합니다.
+- 차량에서 음악과 별도로 내비 안내 음량을 조절하도록 수정했습니다.
+- 처음 안내할 때 아직 받지 못한 거리를 0m로 표시하던 처리를 개선했습니다.
+- 다음 회전까지의 거리와 추천 차선이 가리키는 교차로까지의 거리를 분리했습니다.
+- AR뷰 기능이 추가됩니다. 기본 OFF이며 HMG-API 설정에서 켤 수 있습니다.
+- 시동 종료 후 차량 문을 열면 동글의 무선 AP를 종료하며, CarPlay 연결이 종료됩니다.
+- CarPlay 설치와 음소거 패키지 설치를 분리했습니다.
 
 HMG-API 설정은 **AR 턴 표시**, **외부 USB Wi-Fi 동글 사용** 두 가지이며 변경 후 내비 재부팅이 필요합니다.
 
