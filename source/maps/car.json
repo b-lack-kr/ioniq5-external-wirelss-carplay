@@ -27,7 +27,9 @@
     "/system/framework/com.tcc.iap2.odex": "e9bb5e16b11a6feefa593d3f2ea7d961",
     "/system/framework/core.odex": "d1ec6d320055c72796d453b4c5d6ba55",
     "/system/framework/framework.odex": "ffe86fa1540c8dea3b5499b1191bb727",
-    "/system/framework/framework2.odex": "012f5d1c55c950e30b0174bde42a35f2"
+    "/system/framework/framework2.odex": "012f5d1c55c950e30b0174bde42a35f2",
+    "/system/app/PhoneProjection.odex": "14c41dbd972b437d82c226295bf1dae9",
+    "/system/app/WelcomeGoodbye.odex": "33376e36199a38b928bceec54b0c148b"
   },
   "apps": [
     "btsettings",
@@ -40,7 +42,9 @@
     "launcher",
     "panel",
     "settings",
-    "themesettings"
+    "themesettings",
+    "phoneprojection",
+    "welcome"
   ],
   "app_files": {
     "btsettings": {
@@ -114,6 +118,18 @@
       "package": "com.android.themesettings",
       "files": [
         "/system/app/ThemeSettings.odex"
+      ]
+    },
+    "phoneprojection": {
+      "package": "com.daudio.app.phoneprojection",
+      "files": [
+        "/system/app/PhoneProjection.odex"
+      ]
+    },
+    "welcome": {
+      "package": "com.mobis.welcome",
+      "files": [
+        "/system/app/WelcomeGoodbye.odex"
       ]
     }
   },

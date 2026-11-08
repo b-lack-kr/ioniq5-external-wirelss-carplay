@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import signal
+import sys
 import subprocess
 import tempfile
 import time
@@ -12,6 +13,9 @@ from pathlib import Path
 SOURCE = Path(__file__).resolve().parents[1]
 DRIVERS = '2357:0115 88x2bu\n2357:012d 88x2bu\n2357:012e 88x2bu\n2357:0138 88x2bu\n0bda:b851 8851bu\n'
 PASS = 'A10b_f9FakeSyntheticPassword'
+BOOT = '12345678-1234-1234-1234-123456789abc'
+OTHER_BOOT = '22345678-1234-1234-1234-123456789abc'
+EVENT_NS = '1234567890123456'
 
 class RadioTest(unittest.TestCase):
     def setUp(self):
@@ -28,13 +32,15 @@ class RadioTest(unittest.TestCase):
         self.tools = self.root/'fakebin'
         for folder in (self.usb, self.driver.parent, self.app,self.tools,self.base/'config',
                        self.vendor/'modules',self.vendor/'bin',self.path('/data/local/tmp'),
-                       self.path('/proc/sys/kernel'),self.path('/system/bin')):
+                       self.path('/proc/sys/kernel/random'),self.path('/system/bin')):
             folder.mkdir(parents=True,exist_ok=True)
         for file in ('modules/88x2bu.ko','modules/8851bu.ko','bin/usbwifistatus.jar'):
             (self.vendor/file).write_text('asset')
         self.driver.write_text('')
         (self.root/'boot-ready').touch()
         self.path('/proc/sys/kernel/osrelease').write_text('3.18.24-tcc\n')
+        self.path('/proc/sys/kernel/random/boot_id').write_text(BOOT+'\n')
+        self.path('/proc/uptime').write_text('2000000.25 4000000.00\n')
         (self.base/'config/hotspot.conf').write_text('AP_SSID=Hyundai_123456\nAP_PASS='+PASS+'\n')
         (self.app/'driver-ids').write_text(DRIVERS)
         script=(SOURCE/'ap/service.sh').read_text()
@@ -52,17 +58,33 @@ case "${1##*/}" in 88x2bu.ko) sum=dc2f643ceb8d5739d70960a54507fe8f;; 8851bu.ko) 
 echo "$sum  $1"''')
         self.cmd('iptables','echo "$*" >> "$ROOT/firewall"')
         self.cmd('ip','''echo "$*" >> "$ROOT/network"
+[ "$*" != 'link set rtwlan0 down' ] || [ ! -f "$ROOT/fail-link-down" ] || exit 1
 case "$*" in '-4 addr show dev rtwlan0') [ ! -f "$ROOT/address" ] || echo '    inet 192.168.43.1/24 brd 192.168.43.255';; 'addr add '*) touch "$ROOT/address";; 'addr del '*) rm -f "$ROOT/address";; esac''')
         self.cmd('insmod','''name=${1##*/}; family=${name%.ko}
 echo "$*" >> "$ROOT/driver"
 [ ! -f "$ROOT/fail-driver-$family" ] || exit 1
 echo "$family 1 0" >> "$ROOT/proc/modules"''')
         self.cmd('am','echo "$*" >> "$ROOT/messages"')
+        self.cmd('wc','exit 127')
+        # Match this car's verified Android toolbox layout (no link-count
+        # column). Desktop ls has a different layout and is not proof of ABI.
+        (self.tools/'ls').write_text('#!'+sys.executable+'\nimport os,sys\n'
+            'assert len(sys.argv)==3 and sys.argv[1]=="-l"\n'
+            'p=sys.argv[2]\nprint("-rw------- root root %d 2026-11-08 16:00 %s" % (os.stat(p).st_size,p))\n')
+        (self.tools/'ls').chmod(0o755)
         self.cmd('sleep','/bin/sleep 0.03')
         patcher=self.path('/system/bin/app_process')
-        patcher.write_text('#!/bin/sh\n[ "$3" = patch-hostapd ] || exit 4\necho patched > "$5"\n')
+        patcher.write_text('#!/bin/sh\n'
+                          'if [ "$2" = kr.ioniq5.usbcp.ExternalDongleSetting ]; then\n'
+                          '  if [ -f "$ROOT/external-invalid" ]; then echo INVALID; exit 2; fi\n'
+                          '  if [ -f "$ROOT/external-off" ]; then echo OFF; else echo ON; fi\n'
+                          '  exit 0\nfi\n'
+                          'if [ "$2" = kr.ioniq5.usbcp.HeadUnitPower ]; then\n'
+                          '  printf "%s\\n" "$CLASSPATH" > "$ROOT/power-classpath"\n'
+                          '  exit 4\nfi\n'
+                          '[ "$3" = patch-hostapd ] || exit 4\necho patched > "$5"\n')
         patcher.chmod(0o755)
-        runtime=(SOURCE/'ap/runtime.sh').read_text()+'''
+        runtime=re.sub(r'/(?:proc|system)/', lambda m:str(self.root)+m.group(), (SOURCE/'ap/runtime.sh').read_text())+'''
 ap_guard() { [ -d "$ROOT/sys/bus/usb/devices/device" ] || return 1
     [ "$1" = check ] || echo "rtwlan0 35 0000000000000000000000000000000000000000000000000000000000000011"
 }
@@ -102,6 +124,8 @@ ap_running() { [ -f "$ROOT/live-$1" ] && [ ! -f "$ROOT/fail-$1" ]; }
     def log(self):
         p=self.tmp/'daemon_stdout.log'
         return p.read_text() if p.is_file() else ''
+    def power_log(self):
+        return ''.join(p.read_text() for p in [self.tmp/'power-decision.log.1',self.tmp/'power-decision.log'] if p.is_file())
     def phase(self,name):
         self.wait_for(lambda: ('AP_EVENT state='+name+'\n') in self.log())
     def messages(self):
@@ -126,6 +150,30 @@ ap_running() { [ -f "$ROOT/live-$1" ] && [ ! -f "$ROOT/fail-$1" ]; }
         shutil.rmtree(self.usb/'device');self.path('/sys/class/net/rtwlan0/ifindex').unlink()
         self.wait_for(lambda:self.log().count('AP_EVENT state=WAIT_DONGLE\n')==2)
         self.assertEqual(self.messages(),'');self.assertFalse((self.root/'live-hostapd').exists())
+    def test_external_off_before_driver_and_android(self):
+        self.attach();(self.root/'external-off').touch();(self.root/'boot-ready').unlink()
+        original=(self.base/'config/hotspot.conf').read_bytes()
+        self.start();self.phase('EXTERNAL_DONGLE_OFF')
+        time.sleep(.1)
+        self.assertIsNone(self.child.poll())
+        self.assertFalse((self.root/'driver').exists());self.assertFalse((self.root/'launch').exists())
+        self.assertEqual((self.base/'config/hotspot.conf').read_bytes(),original)
+        self.assertFalse((self.root/'network').exists());self.assertEqual(self.messages(),'')
+    def test_external_invalid_dormant_no_restart_storm(self):
+        self.attach();(self.root/'external-invalid').touch()
+        self.start();self.phase('EXTERNAL_CONFIG_INVALID');time.sleep(.1)
+        self.assertIsNone(self.child.poll());self.assertFalse((self.root/'driver').exists())
+        self.assertFalse((self.root/'launch').exists());self.assertEqual(self.messages(),'')
+    def test_external_setting_applies_only_after_restart(self):
+        self.attach();(self.root/'external-off').touch()
+        self.start();self.phase('EXTERNAL_DONGLE_OFF');(self.root/'external-off').unlink()
+        time.sleep(.1);self.assertFalse((self.root/'launch').exists())
+        self.stop();self.start();self.phase('SERVICES_RUNNING')
+        (self.root/'external-off').touch();time.sleep(.1)
+        self.assertTrue((self.root/'live-hostapd').exists())
+        self.stop();self.assertFalse((self.root/'live-hostapd').exists())
+        self.start();self.wait_for(lambda:self.log().count('AP_EVENT state=EXTERNAL_DONGLE_OFF\n')==2)
+        self.assertFalse((self.root/'live-hostapd').exists())
     def test_per_attach_failures(self):
         self.attach();(self.root/'fail-hostapd').touch();self.start()
         self.wait_for(lambda:self.log().count('AP_EVENT state=HOSTAPD_EXITED\n')>=2)
@@ -167,7 +215,7 @@ ap_running() { [ -f "$ROOT/live-$1" ] && [ ! -f "$ROOT/fail-$1" ]; }
         self.assertEqual(((self.work/'hostapd.conf').stat().st_mode & 0o777), 0o600)
         self.assertEqual(((self.work/'entropy.bin').stat().st_mode & 0o777), 0o600)
         self.assertIn('AP_DRIVER state=ready family=88x2bu', self.log())
-        self.assertIn('AP_STARTUP version=1.0.1 phase=ENTRY', self.supervisor.read_text())
+        self.assertIn('AP_STARTUP version=1.0.2 phase=ENTRY', self.supervisor.read_text())
     def test_fresh_t3u_012d(self): self.assert_fresh_t3u('012d')
     def test_fresh_t3u_0138(self): self.assert_fresh_t3u('0138')
     def test_fresh_t3u_0115(self): self.assert_fresh_t3u('0115')
@@ -225,5 +273,231 @@ exec /usr/bin/grep "$@"''')
         self.assertIn('AP_STARTUP_FAILURE reason=PREPARE_PATHS',self.supervisor.read_text())
         self.assertEqual(target.read_text(),'unchanged')
         self.assertFalse((self.root/'driver').exists())
+
+    def mock_power_reader(self):
+        # Exercise the real freshness/parser/gate functions. Only the Android
+        # reader process is replaced; no host power or networking is accessed.
+        with (self.app/'runtime.sh').open('a') as out:
+            out.write('\nap_power_start() { POWER_PID=987654; }\nap_power_stop() { :; }\n'
+                      'ap_child_live() { [ "$1" = 987654 ]; }\n')
+        self.path('/proc/uptime').write_text('1000.25 2000.00\n')
+
+    def power(self, value, raw='0', stamp='1000', decision=None, boot=BOOT):
+        self.tmp.mkdir(parents=True,exist_ok=True)
+        if decision is None:
+            if value != getattr(self, 'power_value', None):
+                seq = getattr(self, 'power_seq', 0) + 1
+                self.power_seq = seq
+                self.power_decision = (0 if value == 'ON' and seq == 1 else
+                                       int(stamp)*1000000000+seq if stamp.isdigit() else 0)
+            decision = self.power_decision
+        self.power_value = value
+        pending = self.tmp/'fixture-power.new'
+        pending.write_text(f'{stamp} {value} {raw} {boot} {decision} FIXTURE\n')
+        pending.replace(self.tmp/'power-state')
+
+    def test_power_off_stops_owned_ap_and_on_resumes(self):
+        self.mock_power_reader();self.power('ON');self.attach();self.start();self.phase('SERVICES_RUNNING')
+        credentials=(self.base/'config/hotspot.conf').read_bytes()
+        self.power('OFF','6');self.phase('HU_POWER_OFF')
+        self.assertFalse((self.root/'live-hostapd').exists())
+        self.assertFalse((self.root/'live-dnsmasq').exists())
+        self.assertIn('link set rtwlan0 down\n',(self.root/'network').read_text())
+        launches=(self.root/'launch').read_text();time.sleep(.15)
+        self.assertEqual((self.root/'launch').read_text(),launches)
+        self.power('ON')
+        self.wait_for(lambda:self.log().count('AP_EVENT state=SERVICES_RUNNING\n')==2)
+        self.assertEqual((self.base/'config/hotspot.conf').read_bytes(),credentials)
+        self.assertEqual(self.messages(),'')
+
+    def test_delay_mode_alone_and_unknown_do_not_disconnect(self):
+        self.mock_power_reader();self.power('ON','6');self.attach();self.start();self.phase('SERVICES_RUNNING')
+        self.power('UNKNOWN','unknown');time.sleep(.15)
+        self.assertTrue((self.root/'live-hostapd').exists())
+        self.assertNotIn('HU_POWER_OFF',self.log())
+
+    def test_power_off_at_boot_waits_for_explicit_on(self):
+        self.mock_power_reader();self.power('OFF','6');self.attach();self.start();self.phase('HU_POWER_OFF')
+        self.assertFalse((self.root/'launch').exists())
+        self.power('UNKNOWN','unknown');time.sleep(.15)
+        self.assertFalse((self.root/'launch').exists())
+        self.power('ON');self.phase('SERVICES_RUNNING')
+
+    def test_future_or_malformed_samples_do_not_stop_ap(self):
+        self.mock_power_reader();self.power('ON');self.attach();self.start();self.phase('SERVICES_RUNNING')
+        for stamp,value in [('1001','OFF'),('x','OFF'),('1000','UNRECOGNIZED')]:
+            self.power(value,stamp=stamp);time.sleep(.1)
+            self.assertTrue((self.root/'live-hostapd').exists())
+            self.assertNotIn('HU_POWER_OFF',self.log())
+
+    def test_power_off_does_not_lower_a_detached_interface(self):
+        self.mock_power_reader();self.power('ON');self.attach();self.start();self.phase('SERVICES_RUNNING')
+        shutil.rmtree(self.usb/'device')
+        self.power('OFF','6');self.phase('HU_POWER_OFF')
+        self.assertNotIn('link set rtwlan0 down\n',(self.root/'network').read_text())
+
+    def test_failed_link_down_does_not_block_on_recovery(self):
+        self.mock_power_reader();self.power('ON');self.attach();self.start();self.phase('SERVICES_RUNNING')
+        (self.root/'fail-link-down').touch()
+        self.power('OFF','6');self.phase('HU_POWER_OFF')
+        self.assertFalse((self.root/'live-hostapd').exists())
+        self.assertIn('AP_LINK_DOWN_FAILED iface=rtwlan0',self.log())
+        self.power('ON')
+        self.wait_for(lambda:self.log().count('AP_EVENT state=SERVICES_RUNNING\n')==2)
+        self.assertTrue((self.root/'live-hostapd').exists())
+
+    def test_only_power_reader_gets_automotive_library(self):
+        self.attach();self.start();self.phase('SERVICES_RUNNING')
+        self.wait_for(lambda:(self.root/'power-classpath').exists())
+        expected=str(self.app/'../provider.jar')+':'+str(self.path('/system/framework/automotive.jar'))
+        self.assertEqual((self.root/'power-classpath').read_text().strip(),expected)
+        runtime=(SOURCE/'ap/runtime.sh').read_text()
+        guard=runtime.split('ap_guard() {',1)[1].split('\n}',1)[0]
+        self.assertNotIn('automotive.jar',guard)
+        self.assertNotIn('export BOOTCLASSPATH',runtime)
+
+    def event(self, value, nanos=EVENT_NS, boot=BOOT):
+        self.tmp.mkdir(parents=True,exist_ok=True)
+        pending=self.tmp/'fixture-event.new'
+        pending.write_text(f'{boot} {nanos} {value}\n')
+        pending.replace(self.tmp/'power-event')
+
+    def test_oem_off_survives_false_getter_and_service_restart(self):
+        self.mock_power_reader();self.power('ON',stamp='2000000')
+        self.path('/proc/uptime').write_text('2000000.25 4000000.00\n')
+        self.attach();self.start();self.phase('SERVICES_RUNNING')
+        original=(self.base/'config/hotspot.conf').read_bytes()
+        self.event('OFF');self.phase('HU_POWER_OFF')
+        self.wait_for(lambda:not (self.root/'live-hostapd').exists())
+        launches=(self.root/'launch').read_text()
+        self.power('ON',stamp='2000000');time.sleep(.15)
+        self.assertEqual((self.root/'launch').read_text(),launches)
+        self.stop();self.start();time.sleep(.2)
+        self.assertEqual((self.root/'launch').read_text(),launches)
+        self.event('ON',str(int(EVENT_NS)+1000))
+        self.wait_for(lambda:self.log().count('AP_EVENT state=SERVICES_RUNNING\n')==2)
+        self.assertEqual((self.base/'config/hotspot.conf').read_bytes(),original)
+        self.assertEqual(self.messages(),'')
+
+    def test_explicit_on_outranks_old_getter_off(self):
+        self.mock_power_reader();self.power('OFF',stamp='2000000', decision=str(int(EVENT_NS)-1000))
+        self.path('/proc/uptime').write_text('2000000.25 4000000.00\n')
+        self.event('ON');self.attach();self.start();self.phase('SERVICES_RUNNING')
+        self.assertNotIn('HU_POWER_OFF',self.log())
+
+    def test_stale_oem_on_does_not_mask_new_reader_off(self):
+        self.mock_power_reader();self.power('ON',stamp='2000000')
+        self.path('/proc/uptime').write_text('2000000.25 4000000.00\n')
+        self.event('ON');self.attach();self.start();self.phase('SERVICES_RUNNING')
+        self.power('OFF',stamp='2000000',decision=str(int(EVENT_NS)+1000))
+        self.phase('HU_POWER_OFF')
+        self.assertRegex(self.power_log(),r'AP_POWER_DECISION paused=1 source=READER decision_ns=[0-9]+ event=VALID_ON event_ns=[0-9]+ reader=VALID reader_state=OFF')
+        self.wait_for(lambda:not (self.root/'live-hostapd').exists())
+        launches=(self.root/'launch').read_text()
+        self.stop();self.start();time.sleep(.2)
+        self.assertEqual((self.root/'launch').read_text(),launches)
+        self.event('ON',str(int(EVENT_NS)+2000))
+        self.wait_for(lambda:self.log().count('AP_EVENT state=SERVICES_RUNNING\n')==2)
+
+    def test_power_diagnostic_stable_inputs_do_not_flood(self):
+        self.mock_power_reader();self.power('ON');self.attach();self.start();self.phase('SERVICES_RUNNING')
+        time.sleep(.3)
+        lines=[line for line in self.power_log().splitlines() if line.startswith('AP_POWER_DECISION ')]
+        self.assertEqual(len(lines),1)
+        self.assertIn('event=NONE',lines[0]);self.assertIn('reader=VALID reader_state=ON',lines[0])
+        self.assertNotIn('AP_POWER_DECISION ',self.log())
+        self.power('UNKNOWN','unknown');self.wait_for(lambda:'reader=INVALID reader_state=UNKNOWN' in self.power_log())
+        self.assertTrue((self.root/'live-hostapd').exists())
+
+    def test_power_diagnostic_file_bounds_and_symlinks(self):
+        self.tmp.mkdir(parents=True,exist_ok=True)
+        current=self.tmp/'power-decision.log';backup=self.tmp/'power-decision.log.1'
+        line='AP_POWER_DECISION paused=1 source=READER'
+        def append(value=line):
+            run=subprocess.run(['/bin/bash','-c','printf() { return 127; }; . "$1"; TMP_DIR=$2; ap_power_trace_file "$3"','test',str(self.app/'runtime.sh'),str(self.tmp),value],capture_output=True,text=True,env=dict(os.environ,PATH=str(self.tools)+':/usr/bin:/bin'))
+            self.assertEqual(run.returncode,0);self.assertEqual(run.stdout,'')
+        append();self.assertEqual(current.read_text(),line+'\n')
+        self.assertEqual(current.stat().st_mode & 0o777,0o600)
+        current.write_bytes(b'x'*65535);append()
+        self.assertEqual(backup.stat().st_size,65535);self.assertEqual(current.read_text(),line+'\n')
+        self.assertEqual(backup.stat().st_mode & 0o777,0o600)
+        current.write_bytes(b'x'*65537);backup.write_bytes(b'x'*65537);append()
+        self.assertLessEqual(current.stat().st_size,65536);self.assertFalse(backup.exists())
+        before=current.read_bytes();append(line+'\nforged');append(line+'x'*2050)
+        self.assertEqual(current.read_bytes(),before)
+        target=self.root/'unrelated';target.write_text('untouched')
+        current.unlink();current.symlink_to(target);append();self.assertEqual(target.read_text(),'untouched')
+        current.unlink();backup.symlink_to(target);append();self.assertFalse(current.exists())
+        self.assertEqual(target.read_text(),'untouched')
+
+    def test_reader_checkpoint_off_survives_stale_heartbeat_and_restart(self):
+        self.mock_power_reader();self.power('OFF',stamp='900',decision='900000000000')
+        self.attach();self.start();self.phase('HU_POWER_OFF')
+        self.assertFalse((self.root/'launch').exists())
+        self.stop();self.start();time.sleep(.2)
+        self.assertFalse((self.root/'launch').exists())
+        self.power('ON',stamp='900',decision='999000000000')
+        time.sleep(.15);self.assertFalse((self.root/'launch').exists())
+        self.power('ON',stamp='1000',decision='1000000000000')
+        self.phase('SERVICES_RUNNING')
+
+    def test_previous_boot_reader_checkpoint_is_ignored(self):
+        self.mock_power_reader();self.power('OFF',boot=OTHER_BOOT)
+        self.attach();self.start();self.phase('SERVICES_RUNNING')
+        self.assertNotIn('HU_POWER_OFF',self.log())
+
+    def test_oem_off_at_startup_and_dongle_reattach_stays_paused(self):
+        self.event('OFF');self.start();self.phase('HU_POWER_OFF')
+        self.attach();time.sleep(.15);self.assertFalse((self.root/'launch').exists())
+        shutil.rmtree(self.usb/'device');self.attach();time.sleep(.15)
+        self.assertFalse((self.root/'launch').exists())
+        self.event('ON',str(int(EVENT_NS)+1000));self.phase('SERVICES_RUNNING')
+
+    def test_previous_boot_event_does_not_pause_current_boot(self):
+        self.event('OFF',boot=OTHER_BOOT);self.attach();self.start();self.phase('SERVICES_RUNNING')
+        self.assertNotIn('HU_POWER_OFF',self.log())
+
+    def test_malformed_or_future_event_fails_closed_until_explicit_on(self):
+        self.event('ON',nanos='2999999999999999');self.attach();self.start();self.phase('HU_POWER_OFF')
+        self.assertFalse((self.root/'launch').exists())
+        self.event('ON',nanos='0123456789012345');time.sleep(.1)
+        self.assertFalse((self.root/'launch').exists())
+        self.event('ON',boot='garbage');time.sleep(.1)
+        self.assertFalse((self.root/'launch').exists())
+        self.event('ON');self.phase('SERVICES_RUNNING')
+
+    def test_oem_off_during_hostapd_start_prevents_dhcp(self):
+        self.attach()
+        with (self.app/'runtime.sh').open('a') as out:
+            out.write('''\nap_start_logged() {
+echo "$*" >> "$ROOT/launch"; touch "$ROOT/live-$1"
+if [ "$1" = hostapd ] && [ ! -f "$ROOT/injected-off" ]; then
+  touch "$ROOT/injected-off"
+  echo '12345678-1234-1234-1234-123456789abc 1234567890123456 OFF' > "$TMP_DIR/power-event"
+fi
+}\n''')
+        self.start();self.phase('HU_POWER_OFF')
+        self.wait_for(lambda:not (self.root/'live-hostapd').exists())
+        self.assertNotIn('dnsmasq',(self.root/'launch').read_text())
+        self.wait_for(lambda:'link set rtwlan0 down\n' in (self.root/'network').read_text())
+        self.event('ON',str(int(EVENT_NS)+1000));self.phase('SERVICES_RUNNING')
+
+    def test_16_digit_nanoseconds_do_not_use_shell_integer_arithmetic(self):
+        self.path('/proc/uptime').write_text('20000000.25 40000000.00\n')
+        self.event('OFF',nanos='12345678901234567');self.attach();self.start();self.phase('HU_POWER_OFF')
+        self.assertFalse((self.root/'launch').exists())
+        self.event('ON',nanos='12345678901234568');self.phase('SERVICES_RUNNING')
+        runtime=(SOURCE/'ap/runtime.sh').read_text()
+        self.assertNotIn('$((event_ns',runtime)
+        self.assertNotRegex(runtime,r'\[\s+"\$\{?event_ns[^\]]*\s-(?:gt|ge|lt|le)\s')
+
+    def test_invalid_uuid_cannot_bypass_latch_as_other_boot(self):
+        self.mock_power_reader();self.power('ON',stamp='2000000')
+        self.path('/proc/uptime').write_text('2000000.25 4000000.00\n')
+        self.event('OFF',boot='-'*36);self.attach();self.start();self.phase('HU_POWER_OFF')
+        self.assertFalse((self.root/'launch').exists())
+        self.event('ON',boot='123-5678-1234-1234-1234-123456789abc');time.sleep(.15)
+        self.assertFalse((self.root/'launch').exists())
+        self.event('ON');self.phase('SERVICES_RUNNING')
 
 if __name__=='__main__': unittest.main(verbosity=2)

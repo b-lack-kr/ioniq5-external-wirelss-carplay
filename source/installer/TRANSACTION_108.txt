@@ -1,0 +1,21 @@
+CarPlay 1.0.8 transaction migration
+New transaction: /data/nemesis/neev-usbcp/public-1.0.8
+Direct 1.0.5 -> 1.0.8 remains supported. Intermediate releases are not required.
+All previously authenticated historical sources remain accepted.
+
+Additional exact 1.0.7 input:
+Core SHA256: 4a2253a8ea351a145ab8742a092b878bd1f559d181a138a9b33ebc71cc5ffb3c
+Kit MANIFEST MD5: 51867b7e289e9f48b21cf9c5ed456303
+Signed mod manifest MD5: 2bd01e8dfdee15774e003fb9c4eca170
+Owner: bd5f651c-38f9-8ef4-827c-34ad706c2b5c
+
+Complete pinned old kits and their signed payloads are verified but not executed.
+The exact source is retained for failed-install rollback and explicit restore.
+Uninstall/fresh handling parks only authenticated completed old records.
+Same healthy 1.0.8 automatic USB insertion collects logs without reinstall.
+Damaged, incomplete, unknown or newer states stop; no automatic downgrade.
+HMG-API minimum 1.0.1 is separate from CarPlay version pins.
+
+1.0.7 experimental progress IPC and native warning snapshot replay are removed.
+Korean r8.2 distance policy and read-only native evidence are under vehicle review.
+This package does not claim complete native cursor motion or all AR HUD support.

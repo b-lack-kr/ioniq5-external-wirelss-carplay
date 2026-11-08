@@ -1,4 +1,4 @@
-# IONIQ 5 USB CarPlay 1.0.1
+# IONIQ 5 USB CarPlay 1.0.2
 
 The module targets Korean NEEV firmware 260902 and Android 4.4.2. The source
 contains the Android CarPlay bridge, 5 GHz AP supervisor, HMG-API memory

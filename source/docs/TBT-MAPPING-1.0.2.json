@@ -1,0 +1,438 @@
+{
+  "target": "NEEV.KOR.0000.V039.001.260902 / 23MY Korean IONIQ5",
+  "scope": "Source mapping audit. Numeric frame mapping is not proof of actual cluster/HUD artwork; vehicle validation remains required.",
+  "summary": {
+    "nonzero_apple_types": 53,
+    "nonzero_default_icon": 47,
+    "of_these_generic_roundabout_without_geometry": 21,
+    "additional_type_with_selected_bearing": 1,
+    "unresolved_or_lifecycle_only_types": [
+      10,
+      11,
+      16,
+      17,
+      27
+    ],
+    "no_turn_type_zero_separate": true
+  },
+  "sources": {
+    "apple_public_enum": "/Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk/System/iOSSupport/System/Library/Frameworks/CarPlay.framework/Versions/A/Headers/CPManeuver.h",
+    "apple_docs": "https://developer.apple.com/documentation/carplay/cpmaneuvertype",
+    "local_reference_gpm": "neev-carplay/improvements/20261105/reference-HKMC_GPM/sources/com/google/android/projection/sink/navigation/GpmNaviTBTManager.java:577",
+    "reference_gpm_apk_md5": "888926d4e5aa17573179ec4bb2462278",
+    "reference_stock_gpm_odex_md5": "96cd7c27a9db19acb3900f21f57ea9f0",
+    "reference_scope": "NEMESIS projection-tbt package os*.260507; stock hash matches HMG-API EV6USA260507 and EV6CAN260206 maps. Not identical to this NEEVKOR firmware.",
+    "target_gpm_odex_md5": "c38a7fd61f90973625401501215375db",
+    "latest_upstream_checked": "https://raw.githubusercontent.com/VysseCodes/HMG-API/main/mods/wireless-carplay-aa/src/hmgapi/mods/wireless/dipo/CpTurns.java",
+    "latest_result": "Still legacy limited table; no tunnel glyph or new off-ramp mapping found. No engine version change made."
+  },
+  "tunnel": {
+    "phone_enum_present": false,
+    "oem_icon_may_exist": true,
+    "numeric_id_confirmed": false,
+    "implementation": "Preserve explicit tunnel instruction as text; no guessed OEM tunnel number.",
+    "missing_evidence": "Actual target native navigation/framework implementation or stock TBT payload paired with known tunnel maneuver; reference APK only forwards display type and has no TBT glyph resources."
+  },
+  "rows": [
+    {
+      "type": 0,
+      "apple_enum": "NoTurn",
+      "status": "intentional_no_turn",
+      "default_icon_without_bearing_kr": 0,
+      "detail": "NoTurn remains blank unless a complete current U-turn/clock instruction provides verified fallback; POI/road names never choose an icon."
+    },
+    {
+      "type": 1,
+      "apple_enum": "LeftTurn",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 70,
+      "detail": "70 left; confirmed angle -45 uses145, sharp/slight bearing uses69/71."
+    },
+    {
+      "type": 2,
+      "apple_enum": "RightTurn",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 67,
+      "detail": "67 right; confirmed angle45 uses144, sharp/slight bearing uses68/66."
+    },
+    {
+      "type": 3,
+      "apple_enum": "StraightAhead",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 65,
+      "detail": "65 straight; supplied tunnel instruction retained as text; no proven tunnel glyph."
+    },
+    {
+      "type": 4,
+      "apple_enum": "UTurn",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 72,
+      "detail": "72 U-turn in right-side traffic,73 in left-side traffic; roundabout junction uses102."
+    },
+    {
+      "type": 5,
+      "apple_enum": "FollowRoad",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 172,
+      "detail": "172 legacy follow-road; complete current instruction or selected multi-arm junction may yield a specific existing direction."
+    },
+    {
+      "type": 6,
+      "apple_enum": "EnterRoundabout",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "64 without selected bearing; enter-roundabout label. With bearing, known nearest-sector roundabout glyph."
+    },
+    {
+      "type": 7,
+      "apple_enum": "ExitRoundabout",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "64 without selected bearing; exit-roundabout label. With bearing, known nearest-sector roundabout glyph."
+    },
+    {
+      "type": 8,
+      "apple_enum": "OffRamp",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 86,
+      "detail": "NEW: generic off-ramp86, negative selected bearing82, positive81. Missing/0/±180 do not choose a side; KR side0/intersection only."
+    },
+    {
+      "type": 9,
+      "apple_enum": "OnRamp",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 172,
+      "detail": "EXTENDED: generic on-ramp172, negative selected bearing174, positive173. Missing/0/±180 do not choose a side; KR side0/intersection only."
+    },
+    {
+      "type": 10,
+      "apple_enum": "ArriveEndOfNavigation",
+      "status": "unresolved",
+      "default_icon_without_bearing_kr": 0,
+      "detail": "No independently verified mapping for end-of-navigation lifecycle instruction; do not falsely label it as destination."
+    },
+    {
+      "type": 11,
+      "apple_enum": "StartRoute",
+      "status": "unresolved",
+      "default_icon_without_bearing_kr": 0,
+      "detail": "Route start is not itself a directional maneuver; no verified start glyph."
+    },
+    {
+      "type": 12,
+      "apple_enum": "ArriveAtDestination",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 112,
+      "detail": "112 destination; legacy route state2 uses3. Existing side0/intersection conditions retained."
+    },
+    {
+      "type": 13,
+      "apple_enum": "KeepLeft",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 71,
+      "detail": "71 keep-left."
+    },
+    {
+      "type": 14,
+      "apple_enum": "KeepRight",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 66,
+      "detail": "66 keep-right."
+    },
+    {
+      "type": 15,
+      "apple_enum": "Enter_Ferry",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 176,
+      "detail": "176 ferry entrance; existing side0/intersection/zero-or-absent-bearing conditions retained."
+    },
+    {
+      "type": 16,
+      "apple_enum": "ExitFerry",
+      "status": "unresolved",
+      "default_icon_without_bearing_kr": 0,
+      "detail": "Ferry exit has no verified distinct mapping; not collapsed into ferry entrance176."
+    },
+    {
+      "type": 17,
+      "apple_enum": "ChangeFerry",
+      "status": "unresolved",
+      "default_icon_without_bearing_kr": 0,
+      "detail": "Ferry transfer/change has no verified distinct mapping; not collapsed into ferry entrance176."
+    },
+    {
+      "type": 18,
+      "apple_enum": "StartRouteWithUTurn",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 72,
+      "detail": "72/73 start-with-U-turn according to traffic side."
+    },
+    {
+      "type": 19,
+      "apple_enum": "UTurnAtRoundabout",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 102,
+      "detail": "102 roundabout U-turn, even when bearing is absent."
+    },
+    {
+      "type": 20,
+      "apple_enum": "LeftTurnAtEnd",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 70,
+      "detail": "Same known left-turn glyphs as1."
+    },
+    {
+      "type": 21,
+      "apple_enum": "RightTurnAtEnd",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 67,
+      "detail": "Same known right-turn glyphs as2."
+    },
+    {
+      "type": 22,
+      "apple_enum": "HighwayOffRampLeft",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 82,
+      "detail": "82 explicit left off-ramp; nonzero selected angle no longer suppresses it. KR side0/intersection."
+    },
+    {
+      "type": 23,
+      "apple_enum": "HighwayOffRampRight",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 81,
+      "detail": "81 explicit right off-ramp; nonzero selected angle no longer suppresses it. KR side0/intersection."
+    },
+    {
+      "type": 24,
+      "apple_enum": "ArriveAtDestinationLeft",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 114,
+      "detail": "114 left destination; existing side0/intersection/zero-or-absent-bearing conditions retained."
+    },
+    {
+      "type": 25,
+      "apple_enum": "ArriveAtDestinationRight",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 113,
+      "detail": "113 right destination; existing side0/intersection/zero-or-absent-bearing conditions retained."
+    },
+    {
+      "type": 26,
+      "apple_enum": "UTurnWhenPossible",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 72,
+      "detail": "72/73 U-turn-when-possible according to traffic side."
+    },
+    {
+      "type": 27,
+      "apple_enum": "ArriveEndOfDirections",
+      "status": "unresolved",
+      "default_icon_without_bearing_kr": 0,
+      "detail": "End-of-directions lifecycle instruction has no independently verified glyph."
+    },
+    {
+      "type": 28,
+      "apple_enum": "RoundaboutExit1",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal1; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 29,
+      "apple_enum": "RoundaboutExit2",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal2; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 30,
+      "apple_enum": "RoundaboutExit3",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal3; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 31,
+      "apple_enum": "RoundaboutExit4",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal4; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 32,
+      "apple_enum": "RoundaboutExit5",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal5; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 33,
+      "apple_enum": "RoundaboutExit6",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal6; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 34,
+      "apple_enum": "RoundaboutExit7",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal7; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 35,
+      "apple_enum": "RoundaboutExit8",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal8; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 36,
+      "apple_enum": "RoundaboutExit9",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal9; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 37,
+      "apple_enum": "RoundaboutExit10",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal10; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 38,
+      "apple_enum": "RoundaboutExit11",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal11; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 39,
+      "apple_enum": "RoundaboutExit12",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal12; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 40,
+      "apple_enum": "RoundaboutExit13",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal13; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 41,
+      "apple_enum": "RoundaboutExit14",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal14; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 42,
+      "apple_enum": "RoundaboutExit15",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal15; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 43,
+      "apple_enum": "RoundaboutExit16",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal16; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 44,
+      "apple_enum": "RoundaboutExit17",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal17; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 45,
+      "apple_enum": "RoundaboutExit18",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal18; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 46,
+      "apple_enum": "RoundaboutExit19",
+      "status": "generic_without_geometry",
+      "default_icon_without_bearing_kr": 64,
+      "detail": "Roundabout exit ordinal19; without selected bearing show generic64 and ordinal text, never assume exit number means clock direction. With bearing use known nearest-sector glyph."
+    },
+    {
+      "type": 47,
+      "apple_enum": "SharpLeftTurn",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 69,
+      "detail": "69 sharp left."
+    },
+    {
+      "type": 48,
+      "apple_enum": "SharpRightTurn",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 68,
+      "detail": "68 sharp right."
+    },
+    {
+      "type": 49,
+      "apple_enum": "SlightLeftTurn",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 71,
+      "detail": "71 slight left."
+    },
+    {
+      "type": 50,
+      "apple_enum": "SlightRightTurn",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 66,
+      "detail": "66 slight right."
+    },
+    {
+      "type": 51,
+      "apple_enum": "ChangeHighway",
+      "status": "selected_bearing_required",
+      "default_icon_without_bearing_kr": 0,
+      "detail": "NEW conditional: negative selected bearing174 or positive173; missing/0/±180 remain unknown/blank. KR side0/intersection."
+    },
+    {
+      "type": 52,
+      "apple_enum": "ChangeHighwayLeft",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 174,
+      "detail": "174 explicit left highway change; nonzero selected angle no longer suppresses it. KR side0/intersection."
+    },
+    {
+      "type": 53,
+      "apple_enum": "ChangeHighwayRight",
+      "status": "default_glyph",
+      "default_icon_without_bearing_kr": 173,
+      "detail": "173 explicit right highway change; nonzero selected angle no longer suppresses it. KR side0/intersection."
+    }
+  ],
+  "minimum_read_only_candidates": [
+    "/system/app/HKMC_GPM.odex",
+    "/system/app/HKMC_GPM.apk",
+    "/system/app/HKMC_Navi_ExSL.odex",
+    "/system/app/HKMC_Navi_ExSL.apk",
+    "/system/framework/automotive.odex",
+    "/system/framework/automotive.jar",
+    "/system/framework/automotive-service.odex",
+    "/data/data/com.mnsoft.navi/BIN/libExSLNavi.so",
+    "/data/data/com.mnsoft.navi/BIN/libExSLAndroidJNI.so",
+    "/system/lib/libExSLNavi.so",
+    "/system/lib/libExSLAndroidJNI.so",
+    "/storage/navi/navi/BIN/G40/libExSLNavi.so",
+    "/storage/navi/navi/BIN/G40/libExSLAndroidJNI.so",
+    "/storage/navi/navi/BIN/G45/libExSLNavi.so",
+    "/storage/navi/navi/BIN/G45/libExSLAndroidJNI.so",
+    "/storage/navi2/navi/BIN/G40/libExSLNavi.so",
+    "/storage/navi2/navi/BIN/G40/libExSLAndroidJNI.so",
+    "/storage/navi2/navi/BIN/G45/libExSLNavi.so",
+    "/storage/navi2/navi/BIN/G45/libExSLAndroidJNI.so"
+  ],
+  "collection_exclusions": "Do not collect whole map/user-data directories, trip histories, addresses, raw NMEA, vehicle identifiers or live CAN frames."
+}

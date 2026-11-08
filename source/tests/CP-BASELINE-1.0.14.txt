@@ -1,0 +1,28 @@
+CarPlay v1.0.14 validation scope
+
+User-confirmed v1.0.9 behavior covers basic TBT only. Recommended lanes and junction
+view did NOT work in that version. This release preserves baseline basic TBT and
+adds isolated auxiliary input/output. Code or host tests are not vehicle evidence.
+
+test_maneuvers/test_lanes/test_settings_policy exercise active CpTurns, including
+AR-independent lanes and supported PE14. There is no recurring main/HUD/lane refresh
+and no new lane-distance writer. Existing trip-total flush is separate.
+
+test_aux_writer exercises bounded output coalescing, blocked IPC/gate, epoch invalidation,
+immutable snapshots, deduplication, independently failing channels and retry on new input.
+Raw observation runs after original forwarding, parsing on another thread. It must remain
+bounded and discard invalid/stale fragments without blocking transport.
+
+test_junction_bridge/test_bridge_forget cover the modified production bridge. The entire
+Bridge file is no longer byte-identical to v1.0.9: transport behavior is retained and an
+isolated optional observer has been added. CpLaneDecoder/CpLaneFrame/CpJunctions are now
+active auxiliary helpers. Archived-v1.0.12 tests are historical, not active release tests.
+Android Auto is a separate app part and retains its independent tests.
+
+Production ownership test: test_aux_ownership extracts RgListener.end directly from
+Dipo. Both end(false) (stock takeover) and end(true) (actual session loss) revoke
+queued optional lane/pattern output immediately, before the handler stop runs.
+An ended session cannot clear a newly active owner's optional display. Basic
+main/HUD retains its baseline clear. Route state 0 within a live phone-owned
+session still clears optional outputs normally. A framework IPC already accepted
+before revocation cannot be canceled; stale queued/pending work is rejected.

@@ -1,31 +1,30 @@
 #!/usr/bin/env python3
-"""Package the 1.0.1 PC preparation tools alongside the exact, previously signed vehicle release."""
+"""Package public 1.0.2 PC tools after the signed vehicle/source pins are finalized."""
 import argparse
 from hashlib import sha256
 from io import BytesIO
+import json
 import os
 from pathlib import Path
+import re
 from tempfile import NamedTemporaryFile
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 BASE = Path(__file__).resolve().parent
-KIT = 'NEEV_260902_CarPlay_1.0.1_USB.zip'
-SRC = 'NEEV_260902_CarPlay_1.0.1_SOURCE.zip'
-SIGNED = {
-    KIT: '17f565786fba31b93ad38d5d5a5f383b9f8fe7d1fab1b9368baa8a08de3167c9',
-    SRC: '9ce1130b7e2507fce5c275558a5e4f80cc3b919bea5bf46d7765d813ab2dcf7c',
-}
-RELEASE_BASE = 'https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/download/v1.0.1'
+KIT = 'NEEV_260902_CarPlay_1.0.2_USB.zip'
+SRC = 'NEEV_260902_CarPlay_1.0.2_SOURCE.zip'
+RELEASE_BASE = 'https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/download/v1.0.2'
 TOKEN = b'@CARPLAY_RELEASE_BASE@'
+HASH_TOKEN = b'@CARPLAY_CORE_SHA256@'
 MAC = 'USB-준비-macOS.command'
 CMD = 'Prepare-USB-Windows.cmd'
 WIN = 'tools/Prepare-USB.ps1'
 VOLUME = 'tools/WindowsUsbVolume.ps1'
 GUIDE = '사용안내.txt'
 SUMS = 'SHA256SUMS.txt'
-MAC_ZIP = 'Prepare-USB-macOS-v1.0.1.zip'
-WIN_ZIP = 'Prepare-USB-Windows-v1.0.1.zip'
-COMBINED = 'NEEV_260902_CarPlay_1.0.1_by_blackr.zip'
+MAC_ZIP = 'Prepare-USB-macOS-v1.0.2.zip'
+WIN_ZIP = 'Prepare-USB-Windows-v1.0.2.zip'
+COMBINED = 'NEEV_260902_CarPlay_1.0.2_by_blackr.zip'
 
 
 def require(test, message):
@@ -49,7 +48,7 @@ def make_zip(files):
     buffer = BytesIO()
     with ZipFile(buffer, 'w') as archive:
         for name, data in sorted(files.items()):
-            entry = ZipInfo(name, (2026, 11, 5, 0, 0, 0))
+            entry = ZipInfo(name, (2026, 11, 8, 0, 0, 0))
             entry.create_system = 3
             entry.external_attr = (0o100000 | mode(name)) << 16
             archive.writestr(entry, data, compress_type=ZIP_STORED if name.endswith('.zip') else ZIP_DEFLATED)
@@ -59,26 +58,55 @@ def make_zip(files):
     return buffer.getvalue()
 
 
-def build(signed, source):
+def load_pins(path):
+    pins = json.loads(path.read_text())
+    require(set(pins) == {KIT, SRC}, 'Expected exactly the final vehicle and source archive pins')
+    require(all(isinstance(v, str) and re.fullmatch('[0-9a-f]{64}', v) for v in pins.values()),
+            'Final release hashes are not set; do not package placeholder pins')
+    return pins
+
+
+def check_core(data):
+    with ZipFile(BytesIO(data)) as archive:
+        names = archive.namelist()
+        require(len(names) == len(set(names)) and archive.testzip() is None, 'Invalid core ZIP inventory')
+        require(all(n and not n.endswith('/') and not n.startswith('/') and '\\' not in n and
+                    all(part not in ('', '.', '..') for part in n.split('/')) for n in names),
+                'Core ZIP must contain ordinary relative files only')
+        require(not any('mute-pause' in n or Path(n).name in ('usbwifi.hotspot.zip', 'HKG_5W_USBWifi_Hotspot.zip') for n in names),
+                'CarPlay core must not bundle the independent mute package or downloaded vendor files')
+        require({'NEMESIS.data','NEMESIS.sh','USB_AUTO.sh','NEEV_CP_INSTALL.sh','packages/hmgapi.neev-usb-carplay.zip'} <= set(names),
+                'Missing public CarPlay installation entry points')
+        prefix = 'NEEV_CP/payload/mod/'
+        manifest = json.loads(archive.read(prefix + 'META-HMGAPI/manifest.json'))
+        require(manifest['version'] == '1.0.2' and manifest['id'] == 'neev-usb-carplay', 'Wrong signed CarPlay package')
+        require(manifest['files'] == {n[len(prefix):]: digest(archive.read(n)) for n in names
+                                     if n.startswith(prefix) and not n.startswith(prefix + 'META-HMGAPI/')},
+                'Signed CarPlay file inventory mismatch')
+
+
+def build(signed, source, pins):
     payload = {}
-    for name, pin in SIGNED.items():
+    for name, pin in pins.items():
         data = (signed / name).read_bytes()
         require(digest(data) == pin, f'Original signed release digest differs: {name}')
         payload[name] = data
+    check_core(payload[KIT])
     for name in (MAC, CMD, WIN, VOLUME, GUIDE):
         path = source / name
         require(path.is_file() and not path.is_symlink(), f'Missing preparation source: {name}')
         data = path.read_bytes()
         if name in (MAC, WIN):
             require(data.count(TOKEN) == 1, f'Expected one public release URL token: {name}')
-            data = data.replace(TOKEN, RELEASE_BASE.encode())
-            for pin in (SIGNED[KIT], '7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7',
+            require(data.count(HASH_TOKEN) == 1, f'Expected one final core hash token: {name}')
+            data = data.replace(TOKEN, RELEASE_BASE.encode()).replace(HASH_TOKEN, pins[KIT].encode())
+            for pin in (pins[KIT], '7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7',
                         'd9077ba275398c1578444fdea479a5675e21f1b36f9ad3217e57b65aeadc512b'):
                 require(pin.encode() in data, f'Preparation input digest missing: {name}')
-        require(TOKEN not in data and b'/Users/' not in data, f'Unresolved token or developer path: {name}')
+        require(not re.search(rb'@[A-Z_]+@', data) and b'/Users/' not in data, f'Unresolved token or developer path: {name}')
         payload[name] = data
     payload[SUMS] = sums(payload)
-    assets = {n: payload[n] for n in SIGNED}
+    assets = {n: payload[n] for n in pins}
     assets[MAC_ZIP] = make_zip({MAC: payload[MAC]})
     assets[WIN_ZIP] = make_zip({n: payload[n] for n in (CMD, WIN, VOLUME)})
     assets[COMBINED] = make_zip(payload)
@@ -129,15 +157,16 @@ def main():
     parser.add_argument('--signed-dir', type=Path, required=True,
                         help='Location of the accepted signed vehicle USB and matching source ZIP')
     parser.add_argument('--source-dir', type=Path, default=BASE / 'source')
+    parser.add_argument('--pins', type=Path, default=BASE / 'release-pins.json')
     parser.add_argument('--assets-dir', type=Path, default=BASE / 'assets-carplay')
     parser.add_argument('--publish-folder', type=Path,
-                        help='Also put the combined ZIP here and its unpacked files in the 1.0.1 subfolder')
+                        help='Also put the combined ZIP here and its unpacked files in the 1.0.2 subfolder')
     args = parser.parse_args()
-    contents, assets = build(args.signed_dir, args.source_dir)
+    contents, assets = build(args.signed_dir, args.source_dir, load_pins(args.pins))
     publish_folder(args.assets_dir, assets)
     if args.publish_folder:
         require(not args.publish_folder.is_symlink(), 'Refusing to publish releases through a symbolic link')
-        publish_folder(args.publish_folder / '1.0.1', contents)
+        publish_folder(args.publish_folder / '1.0.2', contents)
         put(args.publish_folder, COMBINED, assets[COMBINED])
     print(f'Verified release assets: {args.assets_dir}')
     print(assets[SUMS].decode(), end='')

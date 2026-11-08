@@ -1,5 +1,8 @@
-NEEV 260902 USB CarPlay 1.0.0
-2026-11-05
+Public CarPlay 1.0.2, based on internal 1.0.15, 2026-11-08.
+The following earlier version labels are retained attribution history.
+
+NEEV 260902 USB CarPlay 1.0.4
+2026-11-06
 
 1. CarPlay bridge, route guidance and HMG-API
 
@@ -34,3 +37,43 @@ NEMESIS by xwtk (AGPL-3.0) provides the package manager and USB dispatch on the 
 https://github.com/xwtk/hmg_nemesis
 
 The directory licenses contains unmodified license texts and the upstream HMG-API notice. Source files retain applicable notices. The distributor must offer the matching build source together with this release, including its build and installation scripts.
+
+6. Version1.0.4 additions
+
+Android Auto AaTurns decoding and the memory-only aa-tbt-48ee793a recipe derive
+from the HMG-API wireless-carplay-aa mod. Gpm integrates that behavior through
+this target's probed declarations, with local lifecycle and ownership handling.
+Standard turn display and phone-only lane ownership reference AwsomeFox PR75.
+The reactive video key-frame request references PR100, adapted to the exact
+NEEV callable method with a serialized worker and without its periodic timer.
+
+https://github.com/VysseCodes/HMG-API/pull/75
+https://github.com/VysseCodes/HMG-API/pull/100
+https://github.com/VysseCodes/HMG-API/tree/180185de2c57afb2cca4858d0be7828e8f1051d6/mods/wireless-carplay-aa
+https://github.com/VysseCodes/HMG-Leafia-Plus
+
+The user-supplied Korean Leafia1.0.5.NEEV.KOR.03-r8.2 build was used to check
+the wire format of per-arrow recommendation styles and standard CarPlay turns.
+No manufacturer APK/ODEX/DEX or the reconstructed helper binaries are included
+in this source distribution. New encoding helpers and host tests are included.
+
+HMG-Seogaemo v0.1.46 (2026-11-07)
+Repository: https://github.com/seogaemo/hmg-seogaemo
+Pinned commit: 26eeb97e0a745528b438d7a946be5450fadbfd04
+License: GNU AGPL v3; individual source notices retained, including or-later terms.
+CpJunctions, CpJunctionTable and lane guidance/approach-bar adaptations originate
+from HMG-Seogaemo. Modified by blackr for NEEV USB CarPlay 1.0.10 on 2026-11-07.
+The existing external-USB-Wi-Fi transport, HMG-API runtime and audio fixes are retained.
+This distribution does not include HMG-Seogaemo's private vehicle datasets or OEM binaries.
+Corresponding source and build/install scripts are supplied in the matching source archive.
+
+HMG-Seogaemo v0.1.47 (published 2026-11-07 UTC)
+Repository: https://github.com/seogaemo/hmg-seogaemo
+Pinned commit: 7616e43f669916445f151a7aeb279b32ea09cd4b
+Adapted by blackr for NEEV USB CarPlay 1.0.11 on 2026-11-08.
+CP/AA guidance policy, CpLaneFrame, periodic display refresh, AA lane-route/UTF-8
+recipe and their associated assembly/build inputs derive from this release.
+Existing licenses, attribution and applicable AGPL-3.0-or-later terms are retained.
+The matching source includes modified code, recipe build inputs and tests.
+The external 5 GHz AP, vehicle audio routing and installed HMG-API runtime are retained.
+No private upstream datasets, vehicle firmware binaries or road map data are distributed.

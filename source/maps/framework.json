@@ -1228,5 +1228,92 @@
     ],
     "ret": "int",
     "static": false
+  },
+  "framework.micom_audio": {
+    "class": "com.hkmc.media.MicomAudioManager"
+  },
+  "framework.micom_audio.start_audio": {
+    "method": "startAudio",
+    "params": [
+      "int"
+    ],
+    "ret": "boolean",
+    "static": false
+  },
+  "framework.micom_audio.end_audio": {
+    "method": "endAudio",
+    "params": [
+      "int"
+    ],
+    "ret": "boolean",
+    "static": false
+  },
+  "framework.micom_audio.start_dipo_music": {
+    "method": "startDiPOMusic",
+    "params": [
+      "int"
+    ],
+    "ret": "boolean",
+    "static": false
+  },
+  "framework.micom_audio.current_stream": {
+    "method": "getCurrentStreamType",
+    "params": [],
+    "ret": "int",
+    "static": false
+  },
+  "framework.navigation_cluster.update_tbt_trap_info": {
+    "method": "updateTBTTrapInfo",
+    "params": [
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "framework.navigation_cluster.update_tbt_trap_info_new": {
+    "method": "updateTBTTrapInfoNew",
+    "params": [
+      "com.hkmc.cluster.NavigationCluster$NaviTbtTrapInfo"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "framework.navigation_cluster.update_clu_data_new_14": {
+    "method": "updateCluDataNew_14",
+    "params": [
+      "int",
+      "int",
+      "int",
+      "int",
+      "int"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "framework.navigation_cluster.update_clu_data_14": {
+    "method": "updateCluData_14",
+    "params": [
+      "int",
+      "int",
+      "int"
+    ],
+    "ret": "void",
+    "static": false
   }
 }

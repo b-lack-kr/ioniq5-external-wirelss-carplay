@@ -1,0 +1,63 @@
+CarPlay 1.0.4 transaction extension
+
+The build_payload(...) function signature is unchanged. The new payload must be
+signed as neev-usb-carplay 1.0.4. HMG-API minimum remains 1.0.1; 1.0.2 is accepted.
+
+Transaction paths:
+  workspace: /data/nemesis/neev-usbcp
+  new transaction: workspace/public-1.0.4
+  retained prior transaction: workspace/public-1.0.3 (or public-1.0.2/1.0.1)
+  current version marker: workspace/UPGRADE_CURRENT.txt
+  upgrade source snapshot: public-1.0.4/backup/mod
+  original map snapshot: public-1.0.4/backup/original-map
+  original map-check snapshot: public-1.0.4/backup/map-check
+
+Authenticated released 1.0.3 input (final signed build):
+  USB filename: NEEV_260902_CarPlay_1.0.3_USB.zip
+  ZIP SHA256: b720bb117309937e9d860cee1347eba991d8a01b0c972455cd15dfe8070ad219
+  NEEV_CP/MANIFEST.md5 MD5: 1b8b5e86837c69f0521e0cb9bb2ef1e7
+  signed mod manifest MD5: 8619831be09d30c44d02a6066defe0e4
+  owner UUID: bd5f651c-38f9-8ef4-827c-34ad706c2b5c
+
+The bootstrap validates every old kit member and verifies its signed mod with
+HMG Signing before accepting mode=1.0.3. The installed old mod is independently
+signature-checked through the existing copy_signed backup path. No old kit script
+is executed. Changed, disabled or unowned source installations are not upgraded.
+The previously supported pinned 1.0.2/1.0.1, legacy 0.1.10/0.1.11 and fresh paths
+remain, including rollback to the authenticated source version.
+
+Upgrade keeps workspace/config, vendor assets and HMG settings in place. Mute-pause
+and the NEMESIS startup package are independent; neither is required nor installed
+by this transaction. The CarPlay mod's own HMG service registrations are verified.
+Maps are staged, merged, published and verified for upgrades. Failures restore the
+signed source mod and transaction-owned original map and map-check. User-changed
+maps and maps used by another enabled mod after a completed installation retain
+the existing conservative preservation rule. Missing-map recovery requires the
+exact allowlisted target-map error and an absent map, never a general failure.
+
+An exact 1.0.4 rerun verifies the installed state. Manual uninstall followed by this
+USB retires only a verified completed workspace and performs a fresh install. This
+also handles uninstalling the restored 1.0.3/1.0.2/1.0.1 after a completed 1.0.4
+rollback. An interrupted transaction is recovered first. A differing kit under
+public-1.0.4 is rejected, including PREPARED status; no in-place kit refresh exists.
+
+Validation: test_upgrade_104.py imports immutable real 1.0.3 ZIP members and pins
+its archive and all member hashes. The 1.0.2 baseline regression cases are retained
+in test_upgrade_102.py. Their cases exercise upgrade/repeat, explicit rollback/retry,
+failed map verification/install, interrupted installation across a simulated reboot,
+unknown versions/statuses, tampered old/current kits, changed live mods, manual
+uninstall, independent mute/config preservation, and missing-map recovery.
+Existing installer and missing-map regression suites cover retained prior paths.
+The fixtures are supplied with NEEV_PUBLIC_101_USB, NEEV_PUBLIC_102_USB and
+NEEV_PUBLIC_103_USB. Use the exact named release archives; do not change pins to
+substitute an unverified build. test_upgrade_104.py also uses the 1.0.1 helper.
+Android IPC, firmware writes and signature cryptography are modeled in these
+host simulations; real signature verification and vehicle installation remain
+separate integration checks.
+
+1.0.4 registers and verifies three owned services: usb-ap, ap-provider and development-log.
+Rollback stops only the service names actually registered by the failed candidate and
+restores the previous two-service1.0.3 registration. Missing/duplicate logger metadata
+is a transaction failure. No mute or startup-package registration is consulted.
+Target inventory adds exact BtSettings/PhoneProjection/GPM ODEX pins and AA native library.
+Map merge includes framework, dipo, iap2, btsettings, phoneprojection and gpm.

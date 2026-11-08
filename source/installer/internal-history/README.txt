@@ -1,0 +1,1 @@
+Original internal v1.0.15 installer regression sources. Preserved as historical test fixtures; public 1.0.2 intentionally requires manual removal of active internal versions. Current lifecycle tests are ../test_public102.py.

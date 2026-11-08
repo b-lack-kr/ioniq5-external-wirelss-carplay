@@ -1,0 +1,67 @@
+{
+  "release": "1.0.5",
+  "previous_version": "1.0.4",
+  "validation_kind": "host modeled Android/NEMESIS; not vehicle validated",
+  "results": {
+    "historical_104_upgrade": {
+      "tests": 14,
+      "status": "PASS",
+      "covers": [
+        "initial-final and final-r2 signed kit/mod pairs",
+        "update/rerun/rollback",
+        "manual uninstall to fresh install",
+        "rollback then uninstall to fresh install",
+        "tamper/unknown-state rejection",
+        "missing map repair",
+        "interrupted install recovery"
+      ]
+    },
+    "usb_auto": {
+      "tests": 20,
+      "status": "PASS"
+    },
+    "native_package": {
+      "tests": 15,
+      "status": "PASS"
+    },
+    "older_installer_regressions": {
+      "tests": 71,
+      "status": "PASS",
+      "modules": {
+        "test_installer.py": 38,
+        "test_missing_map.py": 9,
+        "test_upgrade_102.py": 12,
+        "test_upgrade_104.py": 12
+      },
+      "logs": "v1.0.5/validation/test_*.log"
+    },
+    "final_fixed_historical_pin_checks": {
+      "tests": 3,
+      "status": "PASS",
+      "note": "After fixed-digest comparison refinement: both104 signed kits upgrade/restore; tampered kit rejected."
+    }
+  },
+  "artifact_joint_test": {
+    "status": "PASS",
+    "tests": 21,
+    "archive_sha256": "69e8e3d113a5c0726b9e2ec665d53f1dd187b0ff86bd34b37c6b8ddbeaf96ac5",
+    "log": "validation/joint-tests.log"
+  },
+  "unchanged_identity": {
+    "mod": "neev-usb-carplay",
+    "nemesis": "hmgapi.neev-usb-carplay",
+    "uuid": "bd5f651c-38f9-8ef4-827c-34ad706c2b5c",
+    "hmg_minimum": "1.0.1"
+  },
+  "restore_marker": "zero-byte; manual collector entry only",
+  "status": "PASS:120 distinct host installer/native-package/USB-auto tests;3 targeted fixed-pin reruns also pass",
+  "usb_entry_revision": {
+    "revision": "usb-shell-compat-fix-20261106",
+    "status": "PASS",
+    "auto_tests": 24,
+    "actual_failure_reproduced": true,
+    "core_zip_sha256": "43f99958024d6bf5b1c949946fb4ac8bb6b120bd6ffc4a669c5c50f28b20a2ab",
+    "installed_payload_and_inner_installer": "byte-identical to prior validated 1.0.5",
+    "evidence": "validation/usb-shell-fix/"
+  }
+}

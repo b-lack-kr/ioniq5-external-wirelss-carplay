@@ -1,0 +1,25 @@
+AR 커서 구현 참고 자료 / 2026-11-06
+
+Apple 공개 문서
+- https://developer.apple.com/documentation/carplay/cpnavigationsession/maneuverstate
+- https://developer.apple.com/documentation/carplay/cpmaneuverstate
+- https://developer.apple.com/download/files/CarPlay-Developer-Guide.pdf (2026-10-13판 인쇄56쪽)
+- https://developer.apple.com/videos/play/wwdc2025/216/
+- https://developer.apple.com/videos/play/wwdc2023/10150/
+회전 단계는 거리와 별도이며 차량이 metadata의 표시 모양을 결정합니다. app enum 숫자와 차량 wire 숫자 사이 대응은 미확정입니다.
+
+현대 공개 문서
+- https://ownersmanual.hyundai.com/ivi/STD_GEN5W/AVNT/KOR/Korean/010_Settings_car2.html
+- https://developers.hyundai.com/web/v1/hyundai/data_api
+HUD 사용자 설정과 차량 데이터조회는 확인했지만 Gen5W 커서 위치·통과 상태 출력 규격은 찾지 못했습니다.
+
+구현 참고
+- https://github.com/VysseCodes/HMG-Leafia-Plus
+- https://github.com/VysseCodes/HMG-API/pull/75
+- https://github.com/VysseCodes/HMG-API/blob/main/docs/hook-points.md
+- https://github.com/GRT47/HKG_5W_USB_Wlan
+- https://xwtk.cloud/services/nemesis/
+한국 r8.2는 제공된 바이너리를 실행 코드로 대조했습니다. 일반 회전457m경계·main sideStreet·10..90 bar와 F2아이콘 유지가 근거입니다.
+새로운 커서 이동/통과 timeline 구현은 확인하지 못했습니다. Wi-Fi와 NEMESIS 자료는 연결/설치 자료이며 애니메이션 프로토콜 근거와 구분합니다.
+
+이번 후보는 확인된 포팅 차이를 수정하고 누락된 상태 관측을 보완합니다. 애니메이션 해결 완료를 의미하지 않습니다.

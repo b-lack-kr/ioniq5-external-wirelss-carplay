@@ -32,28 +32,93 @@ import hmgapi.hook.Cluster;
  * old app left is cleared and route guidance restarted, so the phone resends all of it.
  * Not ported: DiPO's per-region icon filters (China, Europe, Middle East, Australia,
  * Brazil); on US and Canada cars the build sends every icon.
- * One thread: every call comes from the same handler.
+ * Route state stays on one handler. Optional lane/pattern IPC uses one bounded
+ * latest-state worker, so those calls cannot block basic main/HUD processing.
  */
 final class CpTurns {
     final Context context;
     final Cluster cluster;
+    final boolean standardTurns;
+    final PatternSink patterns;
+    interface PatternSink { boolean send(int[] values); }
+    interface LaneSink { boolean send(byte[] frame); }
+    // ABI only for the retained, inactive v1.0.12 helper source; CP no longer creates it.
+    interface ApproachSink { void update(boolean active, int bar); }
+    private final CpAuxWriter auxiliary;
+    private volatile boolean auxiliaryAllowed=true;
+    private volatile long auxiliaryEpoch;
+    private volatile long laneInputGeneration;
+    private int auxiliaryComponent=-1, auxiliaryManeuver=-1, auxiliaryLane=-1;
+    private boolean auxiliaryStarted;
+    private boolean laneWasWritten; // Auxiliary worker only.
+    private int auxiliaryErrors;
+    // Per-kind rolling samples keep development evidence throughout a long trip,
+    // rather than exhausting a first-12-record budget before the fault occurs.
+    private final long[] diagnosticAt=new long[7];
+    private final int[] diagnosticDropped=new int[7];
+    private int diagnosticSeen;
+    private static final String[] DIAGNOSTIC_KIND={"route","maneuver","lane_input","lane_select","distance_wait","lane_write","pattern_write"};
+    private synchronized boolean diagnosticReady(int kind) {
+        long now=laneNow(); int bit=1<<kind;
+        if((diagnosticSeen&bit)!=0 && now>=diagnosticAt[kind] && now-diagnosticAt[kind]<1000L) {
+            if(diagnosticDropped[kind]<Integer.MAX_VALUE) diagnosticDropped[kind]++;
+            return false;
+        }
+        diagnosticSeen|=bit; diagnosticAt[kind]=now; return true;
+    }
+    private synchronized void diagnostic(int kind,String values) {
+        try { Dipo.log("USB_CP_TBT_DIAG kind="+DIAGNOSTIC_KIND[kind]+" "+values+" dropped="+diagnosticDropped[kind]); }
+        catch(Throwable ignored) {} // Diagnostics never own guidance success.
+        diagnosticDropped[kind]=0;
+    }
+    private static String numbers(int[] values) {
+        if(values==null || values.length==0) return "-1";
+        StringBuilder out=new StringBuilder();
+        for(int i=0;i<values.length && i<128;i++) { if(i>0) out.append(',');out.append(values[i]); }
+        return out.toString();
+    }
+    private static String frameNumbers(byte[] values) {
+        int[] ints=new int[values.length];for(int i=0;i<values.length;i++)ints[i]=values[i]&255;
+        return numbers(ints);
+    }
     /** restarts the phone's route guidance updates (Stop, then Start) on a thread of its own */
     final Runnable restart;
     /** component id -> its route guidance state (DiPO e/u.Al) */
     final LinkedHashMap<Integer, Update> updates = new LinkedHashMap<Integer, Update>();
     /** component id -> maneuver index -> maneuver (DiPO e/u.Am) */
     final LinkedHashMap<Integer, LinkedHashMap<Integer, Maneuver>> maneuvers = new LinkedHashMap<Integer, LinkedHashMap<Integer, Maneuver>>();
+    /** Callback records stay scoped to the display, selected guidance and maneuver. */
+    final LinkedHashMap<Integer, LinkedHashMap<Integer, LaneRecord>> laneFrames = new LinkedHashMap<Integer, LinkedHashMap<Integer, LaneRecord>>();
+    static final int MAX_LANE_FRAMES = 32, MAX_LANE_COMPONENTS = 8;
+    static final long MAX_LANE_AGE_MS = 120000L;
+    static final class LaneRecord {
+        final CpLaneCallback.Rows rows;
+        final long received;
+        final boolean oem;
+        int maneuver=-1;
+        boolean claimed;
+        LaneRecord(CpLaneCallback.Rows rows,long received,boolean oem) { this.rows=rows; this.received=received; this.oem=oem; }
+    }
     String source;
     private final java.util.LinkedHashSet<String> missingManeuvers = new java.util.LinkedHashSet<String>();
-    boolean outputAllowed = true;
+    volatile boolean outputAllowed = true;
     boolean displayed;
     int turnOwner = -1, tripOwner = -1;
     Boolean lastDistanceAvailable;
     boolean hudHasDistance;
     String lastDestination, lastRoad;
     int lastPrimaryIcon = -1, lastPrimaryUnit, lastHudUnit = -1, lastHudScaled;
+    float lastPrimaryDirection;
+    int lastPrimaryBar, lastPrimarySide;
+    int lastPrimaryComponent = -1, lastPrimaryManeuver = -1;
     float lastPrimaryValue;
     boolean lastPrimaryValid;
+    boolean primaryTraced;
+    long lastPrimaryTraceAt;
+    private final LinkedHashMap<Integer, PhaseSample> phaseSeen = new LinkedHashMap<Integer, PhaseSample>();
+    private PhaseSample pendingPhase;
+    private final long[] phaseLogTimes = new long[8];
+    private int phaseLogCount, phaseLogNext, droppedPhases;
     static final long TRIP_INTERVAL_MS = 1000;
     final TripScheduler scheduler;
     TripFrame lastTrip, pendingTrip;
@@ -74,11 +139,83 @@ final class CpTurns {
     String hudRoad;
 
     CpTurns(Context context, Cluster cluster, Runnable restart, TripScheduler scheduler) {
-        this.scheduler = scheduler;
-        this.context = context;
-        this.cluster = cluster;
-        this.restart = restart;
+        this(context, cluster, restart, scheduler, false);
     }
+
+    CpTurns(Context context, Cluster cluster, Runnable restart, TripScheduler scheduler, boolean standardTurns) {
+        this(context, cluster, restart, scheduler, standardTurns, null);
+    }
+
+    CpTurns(Context context, Cluster cluster, Runnable restart, TripScheduler scheduler,
+            boolean standardTurns, PatternSink patterns) {
+        this(context, cluster, restart, scheduler, standardTurns, patterns, backgroundAuxiliary());
+    }
+
+    /** Production wiring provides a method-return-aware lane writer. */
+    CpTurns(Context context,Cluster cluster,Runnable restart,TripScheduler scheduler,
+            boolean standardTurns,PatternSink patterns,LaneSink laneSink) {
+        this(context,cluster,restart,scheduler,standardTurns,patterns,backgroundAuxiliary(),laneSink);
+    }
+
+    /** Recording Cluster adapter used by the baseline host harness. The product
+     * constructor in Dipo explicitly supplies NativeLaneWriter instead. */
+    CpTurns(Context context, final Cluster cluster, Runnable restart, TripScheduler scheduler,
+            boolean standardTurns, final PatternSink patterns, CpAuxWriter.Executor executor) {
+        this(context,cluster,restart,scheduler,standardTurns,patterns,executor,new LaneSink() {
+            public boolean send(byte[] frame) { cluster.laneInfo(frame); return true; }
+        });
+    }
+
+    CpTurns(Context context, final Cluster cluster, Runnable restart, TripScheduler scheduler,
+            boolean standardTurns, final PatternSink patterns, CpAuxWriter.Executor executor,final LaneSink laneSink) {
+        this.scheduler=scheduler; this.context=context; this.cluster=cluster;
+        this.restart=restart; this.standardTurns=standardTurns; this.patterns=patterns;
+        auxiliary=executor==null ? null : new CpAuxWriter(executor, new CpAuxWriter.Sink() {
+            public boolean lane(byte[] frame) {
+                // Don't add an unsolicited lane clear before this instance owns any lanes.
+                if((frame[1]&255)==0 && !laneWasWritten) return true;
+                boolean returned=false;
+                try {
+                    returned=laneSink!=null && laneSink.send(frame);
+                    if(returned)laneWasWritten=(frame[1]&255)>0;
+                    return returned;
+                } finally {
+                    if(diagnosticReady(5)) diagnostic(5,"returned="+(returned?1:0)+" frame="+frameNumbers(frame));
+                }
+            }
+            public boolean pattern(int[] frame) {
+                if(patterns==null)return true;
+                boolean returned=false;
+                try { returned=patterns.send(frame);return returned; }
+                finally { if(diagnosticReady(6)) diagnostic(6,"returned="+(returned?1:0)+" frame="+numbers(frame)); }
+            }
+        }, new CpAuxWriter.Gate() {
+            public boolean allowed(long epoch) { return outputAllowed && auxiliaryAllowed && auxiliaryEpoch==epoch; }
+        }, new CpAuxWriter.Audit() {
+            public void failed(String channel) { auxiliaryFailure(channel); }
+        });
+    }
+
+    private static CpAuxWriter.Executor backgroundAuxiliary() {
+        try {
+            android.os.HandlerThread thread=new android.os.HandlerThread("hmgapi-cp-aux");
+            thread.start();
+            final android.os.Handler handler=new android.os.Handler(thread.getLooper());
+            return new CpAuxWriter.Executor() {
+                public boolean post(Runnable work) { return handler.post(work); }
+            };
+        } catch(Throwable failed) {
+            try { Dipo.log("USB_CP_TBT_AUX_FAILED channel=start"); } catch(Throwable ignored) {}
+            return null; // Optional output must not prevent basic TBT construction.
+        }
+    }
+
+    private synchronized void auxiliaryFailure(String channel) {
+        if(auxiliaryErrors++>=12) return;
+        try { Dipo.log("USB_CP_TBT_AUX_FAILED channel="+channel); } catch(Throwable ignored) {}
+    }
+
+    private long laneNow() { return scheduler==null ? System.nanoTime()/1000000L : scheduler.now(); }
 
     /** RouteGuidanceUpdate (DiPO e/u.c) */
     void routeGuidance(Iap2NotiMsg msg) {
@@ -98,6 +235,7 @@ final class CpTurns {
     private java.util.Set<Integer> knownComponents() {
         java.util.Set<Integer> known = new java.util.LinkedHashSet<Integer>(updates.keySet());
         known.addAll(maneuvers.keySet());
+        known.addAll(laneFrames.keySet());
         return known;
     }
 
@@ -107,8 +245,79 @@ final class CpTurns {
         if (u == null) {
             u = new Update(id, msg);
             updates.put(id, u);
-        } else u.read(id, msg);
+        } else {
+            int oldManeuver=firstIndex(u), oldLane=selectedLane(id,u);
+            u.read(id,msg);
+            // Consumed/current evidence cannot be reused for another maneuver or
+            // selected record. Future indexed records may wait for their first use.
+            if((oldManeuver>=0 && oldManeuver!=firstIndex(u)) || oldLane!=selectedLane(id,u)) {
+                LinkedHashMap<Integer,LaneRecord> records=laneFrames.get(id);
+                if(records!=null) { records.remove(-1); records.remove(oldLane); }
+                if(turnOwner==id) invalidateAuxiliary();
+            }
+        }
+        if (u.state > 0) u.laneSessionEnded = false;
+        if(u.laneCount==0) {
+            LinkedHashMap<Integer,LaneRecord> records=laneFrames.get(id);
+            if(records!=null) {
+                records.remove(selectedLane(id,u)); records.remove(-1);
+                if(records.isEmpty()) laneFrames.remove(id);
+            }
+        }
+        if(diagnosticReady(0)) diagnostic(0,"component="+id+" maneuver="+firstIndex(u)
+                +" fields="+u.inputFields+" clear="+u.distanceCleared+" raw="+u.distNext
+                +" text="+(u.nextStr.isEmpty()?0:1)+" textlen="+Math.min(u.nextStr.length(),256)
+                +" unit="+u.nextUnits+" lane="+u.laneIndex+" records="+u.laneCount
+                +" state="+u.state+" phase="+u.maneuverState+" phasePresent="+(u.maneuverStatePresent?1:0));
+        tracePhase(id, u); // Observe state0 before turn() clears the received state.
         turn(id, u);
+    }
+
+    /** Raw iAP2 state evidence only. Apple app enums and native display enums are
+     * separate contracts; no state here selects a native glyph or animates it. */
+    private static final class PhaseSample {
+        final int route, phase, component, maneuver, meters;
+        final boolean present;
+        PhaseSample(int component, Update u) {
+            this.route = u.state; this.phase = u.maneuverState;
+            this.present = u.maneuverStatePresent; this.component = component;
+            this.maneuver = firstIndex(u); this.meters = u.distNext;
+        }
+        boolean sameState(PhaseSample other) {
+            return other != null && route == other.route && phase == other.phase
+                    && present == other.present && component == other.component
+                    && maneuver == other.maneuver;
+        }
+    }
+
+    private void tracePhase(int component, Update u) {
+        try {
+            PhaseSample current = new PhaseSample(component, u);
+            boolean changed = !current.sameState(phaseSeen.get(component));
+            phaseSeen.put(component, current);
+            if (phaseSeen.size() > 32) phaseSeen.remove(phaseSeen.keySet().iterator().next());
+            if (!changed && pendingPhase == null) return; // Distance-only deltas are silent.
+            // Components can alternate in one packet. An unchanged second display
+            // must not erase the first display's pending phase. Refresh its meters
+            // only when this packet actually belongs to that pending component.
+            if (changed || pendingPhase.component == component) pendingPhase = current;
+            long now = scheduler == null ? System.nanoTime() / 1000000L : scheduler.now();
+            if (phaseLogCount == phaseLogTimes.length
+                    && now - phaseLogTimes[phaseLogNext] < 1000L) {
+                if (changed && droppedPhases < Integer.MAX_VALUE) droppedPhases++;
+                return;
+            }
+            phaseLogTimes[phaseLogNext] = now;
+            phaseLogNext = (phaseLogNext + 1) % phaseLogTimes.length;
+            if (phaseLogCount < phaseLogTimes.length) phaseLogCount++;
+            PhaseSample sent = pendingPhase;
+            pendingPhase = null;
+            int dropped = droppedPhases;
+            droppedPhases = 0;
+            Dipo.log("USB_CP_TBT_PHASE route=" + sent.route + " phase=" + sent.phase
+                    + " present=" + (sent.present ? 1 : 0) + " component=" + sent.component
+                    + " maneuver=" + sent.maneuver + " meters=" + sent.meters + " dropped=" + dropped);
+        } catch (RuntimeException ignored) { /* Observation must not interrupt guidance. */ }
     }
 
     /** the components a RouteGuidanceUpdate is for (item 0); null if it doesn't say */
@@ -171,6 +380,11 @@ final class CpTurns {
         Maneuver value = byIndex.get(index);
         if (value == null) byIndex.put(index, new Maneuver(index, id, msg));
         else value.read(index, id, msg);
+        Maneuver observed=byIndex.get(index);
+        if(observed!=null && diagnosticReady(1)) diagnostic(1,"component="+id+" maneuver="+index
+                +" type="+observed.type+" junction="+observed.junction+" exit="+observed.exit
+                +" side="+observed.side+" lane="+observed.linkedLane+" distance="+observed.distance
+                +" unit="+observed.distUnits+" angles="+numbers(observed.angles));
         Update u = updates.get(id);
         if (u == null || u.list == null) return;
         for (int listed : u.list) {
@@ -181,75 +395,256 @@ final class CpTurns {
         }
     }
 
-    /** LaneGuidance (the build's applyLanes): up to 8 lanes as the cluster's 0xF1 frame */
+    private final java.util.LinkedHashSet<String> laneReports = new java.util.LinkedHashSet<String>();
+    private final java.util.LinkedHashSet<String> laneInputReports = new java.util.LinkedHashSet<String>();
+    private final java.util.LinkedHashSet<String> auxiliaryReports = new java.util.LinkedHashSet<String>();
+
+    /** Existing notify-122 only. No raw iAP2 listener or parser is enabled here. */
     void lanes(Iap2NotiMsg msg) {
-        if (!outputAllowed || !displayed) return;
-        Iap2NotiMsg.Iap2ObjGroup g = msg == null ? null : msg.getItemGroup();
-        if (g == null) return;
-        int[] status = new int[8], a = new int[8], b = new int[8], c = new int[8];
-        int n = 0;
-        Iap2NotiMsg.Iap2ObjGroup[] lanes = null;
-        for (int k = 0; k < g.getItemCnt(); k++) {
-            Iap2NotiMsg.Iap2ObjItem it = g.getObjItem(k);
-            if (it != null && it.getItemParamType() == 13 && it.getItemId() == 2) lanes = it.getItemGroupArray();
-        }
-        if (lanes != null) {
-            for (int k = 0; k < lanes.length && n < 8; k++) {
-                int[] one = laneOne(lanes[k]);
-                status[n] = one[0];
-                a[n] = one[1];
-                b[n] = one[2];
-                c[n] = one[3];
-                n++;
+        if(!outputAllowed) { laneFrames.clear(); invalidateAuxiliary(); return; }
+        int[] ids=null;
+        int index=-1;
+        boolean hasRows=false;
+        try {
+            Iap2NotiMsg.Iap2ObjGroup group=msg==null?null:msg.getItemGroup();
+            if(group==null) return;
+            if(group.getItemCnt()<0 || group.getItemCnt()>32) throw new IllegalArgumentException("lane fields");
+            ids=componentIds(msg);
+            if(ids!=null && ids.length>MAX_LANE_COMPONENTS) throw new IllegalArgumentException("components");
+            Iap2NotiMsg.Iap2ObjGroup[] groups=null;
+            for(int k=0;k<group.getItemCnt();k++) {
+                Iap2NotiMsg.Iap2ObjItem item=group.getObjItem(k);
+                if(item==null) continue;
+                if(item.getItemId()==1 && item.getItemParamType()==5) {
+                    int[] values=item.getItemIntArray();
+                    if(values!=null && values.length==1 && values[0]>=0) index=values[0];
+                    else throw new IllegalArgumentException("guidance index");
+                }
+                if(item.getItemId()==2) {
+                    if(hasRows || item.getItemParamType()!=13) throw new IllegalArgumentException("lane groups");
+                    hasRows=true; groups=item.getItemGroupArray();
+                }
             }
+            if(!hasRows) return; // A metadata-only delta is not an empty record.
+            CpLaneCallback.Rows rows=CpLaneCallback.read(groups);
+            if(ids==null) {
+                for(Integer id:knownComponents()) storeLanes(id,index,rows);
+            } else for(int id:ids) if(id>=0) storeLanes(id,index,rows);
+            reportLanes(groups,rows.frame);
+        } catch(Throwable failed) {
+            auxiliaryFailure("callback");
+            // Malformed lane input cannot erase route/maneuver state or abort a
+            // later core update. Discard affected lane evidence rather than retain
+            // a stale recommendation/picture after an unusable explicit packet.
+            if(ids==null) laneFrames.clear();
+            else for(int id:ids) laneFrames.remove(id);
+            if(displayed) renderAuxiliary(turnOwner,updates.get(turnOwner));
         }
-        byte[] f = new byte[81];
-        f[0] = (byte) 0xF1;
-        f[1] = (byte) n;
-        for (int k = 0; k < n; k++) {
-            f[k + 3] = (byte) status[k];
-            f[k * 3 + 19] = (byte) a[k];
-            f[k * 3 + 20] = (byte) b[k];
-            f[k * 3 + 21] = (byte) c[k];
-        }
-        cluster.laneInfo(f);
     }
 
-    /** one lane: {status (1, or 2 highlighted), up to 3 arrow icons} */
-    static int[] laneOne(Iap2NotiMsg.Iap2ObjGroup g) {
-        int[] r = new int[4];
-        r[0] = 1;
-        if (g == null) return r;
-        int[] angles = null, highlight = null;
-        for (int k = 0; k < g.getItemCnt(); k++) {
-            Iap2NotiMsg.Iap2ObjItem it = g.getObjItem(k);
-            if (it == null) continue;
-            int t = it.getItemParamType();
-            if (t != 5 && t != 8) continue;
-            int[] v = it.getItemIntArray();
-            if (v == null || v.length == 0) continue;
-            int id = it.getItemId();
-            if (id == 1) {
-                if (v[0] == 2) r[0] = 2;
-            } else if (id == 2) {
-                angles = v;
-            } else if (id == 3) {
-                highlight = v;
+    private static int firstIndex(Update u) {
+        return u == null || u.list == null || u.list.length == 0 ? -1 : u.list[0];
+    }
+
+    private int selectedLane(int id, Update u) {
+        // Route item 16 is the current LaneGuidanceIndex. Item 17 is the total
+        // number of guidance records, not the number of physical road lanes.
+        if (u != null && u.laneIndex >= 0) return u.laneIndex;
+        LinkedHashMap<Integer, Maneuver> byIndex = maneuvers.get(id);
+        Maneuver current = byIndex == null ? null : byIndex.get(firstIndex(u));
+        return current == null ? -1 : current.linkedLane;
+    }
+
+    long laneGeneration() { return laneInputGeneration; }
+    boolean acceptsRawLanes() { return outputAllowed && auxiliaryAllowed; }
+
+    /** Handler-owned normalized fallback. A valid OEM record, including an empty
+     * one, wins over raw packets for the same component/index until invalidated. */
+    void fallbackLanes(CpLaneDecoder.Info info,long generation) {
+        if(info==null || generation!=laneInputGeneration || !acceptsRawLanes() || info.component<0 || info.index<0) return;
+        try { storeLanes(info.component,info.index,CpLaneCallback.wireRows(info.lanes),false); }
+        catch(Throwable failed) { auxiliaryFailure("raw-normalize"); }
+    }
+
+    private void storeLanes(int id,int index,CpLaneCallback.Rows rows) { storeLanes(id,index,rows,true); }
+
+    private void storeLanes(int id,int index,CpLaneCallback.Rows rows,boolean oem) {
+        Update u=updates.get(id);
+        if(u!=null && (u.laneSessionEnded || (u.laneCount==0 && (index<0 || index==selectedLane(id,u))))) return;
+        LinkedHashMap<Integer,LaneRecord> records=laneFrames.get(id);
+        if(records==null) {
+            while(laneFrames.size()>=MAX_LANE_COMPONENTS) {
+                Integer evict=null;
+                for(Integer old:laneFrames.keySet()) if(old!=turnOwner) { evict=old; break; }
+                if(evict==null) return;
+                laneFrames.remove(evict);
+            }
+            records=new LinkedHashMap<Integer,LaneRecord>(); laneFrames.put(id,records);
+        }
+        int selected=selectedLane(id,u);
+        if(index<0 && selected>=0) index=selected;
+        LaneRecord prior=records.get(index);
+        long priorAge=prior==null ? -1L : laneNow()-prior.received;
+        boolean priorFresh=prior!=null && priorAge>=0 && priorAge<=MAX_LANE_AGE_MS;
+        if(!oem && priorFresh && prior.oem && prior.rows.exact!=null) return;
+        if(oem && rows.exact==null && priorFresh && !prior.oem && prior.rows.exact!=null) return;
+        LaneRecord record=new LaneRecord(rows,laneNow(),oem);
+        if(u!=null && index==selected && firstIndex(u)>=0) {
+            record.claimed=true; record.maneuver=firstIndex(u);
+        }
+        records.remove(index); records.put(index,record);
+        if(diagnosticReady(2)) {
+            CpLaneDecoder.Lane[] seen=rows.observed;
+            int[] statuses=new int[seen.length],highlights=new int[seen.length],indexes=new int[seen.length],counts=new int[seen.length];
+            int count=0;for(CpLaneDecoder.Lane l:seen)count+=l.angles.length;
+            int[] angles=new int[Math.min(count,128)];int at=0;
+            for(int i=0;i<seen.length;i++) {
+                CpLaneDecoder.Lane l=seen[i];indexes[i]=l.index;statuses[i]=l.status;highlights[i]=l.highlight;counts[i]=l.angles.length;
+                for(int a:l.angles)if(at<angles.length)angles[at++]=a;
+            }
+            diagnostic(2,"component="+id+" index="+index+" source="+(oem?1:0)
+                    +" exact="+(rows.exact==null?0:1)+" count="+seen.length
+                    +" indexes="+numbers(indexes)+" states="+numbers(statuses)+" highlights="+numbers(highlights)
+                    +" angleCounts="+numbers(counts)+" angles="+numbers(angles)+" frame="+frameNumbers(rows.frame));
+        }
+        if(laneInputReports.size()<12) {
+            String detail="source="+(oem?"oem":"raw")+" component="+id+" index="+index
+                    +" lanes="+(rows.frame[1]&255)+" exact="+(rows.exact==null?0:1);
+            if(laneInputReports.add(detail)) {
+                try { Dipo.log("USB_CP_TBT_LANE_INPUT "+detail); } catch(Throwable ignored) {}
             }
         }
-        if (highlight != null && highlight.length > 0) r[0] = 2;
-        if (angles != null) {
-            int n = 0;
-            for (int k = 0; k < angles.length && n < 3; k++) {
-                int icon = laneIcon(angles[k]);
-                if (icon != 0) r[1 + n++] = icon;
+        while(records.size()>MAX_LANE_FRAMES) {
+            for(Integer key:new java.util.ArrayList<Integer>(records.keySet())) {
+                if(key!=selected) { records.remove(key); break; }
             }
         }
-        return r;
+        renderAuxiliary(id,u);
+    }
+
+    private LaneRecord selectedRecord(int id,Update u) {
+        if(u==null || u.laneCount==0 || u.laneSessionEnded) return null;
+        LinkedHashMap<Integer,LaneRecord> records=laneFrames.get(id);
+        int selected=selectedLane(id,u);
+        LaneRecord record=records==null ? null : records.get(selected);
+        if(record==null) return null;
+        long age=laneNow()-record.received;
+        if(age<0 || age>MAX_LANE_AGE_MS || (record.claimed && record.maneuver!=firstIndex(u))) {
+            records.remove(selected); return null;
+        }
+        if(!record.claimed && firstIndex(u)>=0) { record.claimed=true; record.maneuver=firstIndex(u); }
+        return record;
+    }
+
+    private static byte[] emptyLanes() { byte[] frame=new byte[81]; frame[0]=(byte)0xf1; return frame; }
+    private static int[] emptyPattern() { return new int[]{65535,65535,65535,0,0}; }
+
+    private void invalidateAuxiliary() {
+        auxiliaryEpoch++;
+        auxiliaryComponent=auxiliaryManeuver=auxiliaryLane=-1;
+        if(auxiliary!=null) auxiliary.invalidate(auxiliaryEpoch);
+    }
+
+    private void clearAuxiliary() {
+        if(!auxiliaryStarted) return;
+        if(auxiliaryComponent>=0) invalidateAuxiliary();
+        if(outputAllowed && auxiliary!=null) auxiliary.submit(emptyLanes(),emptyPattern(),auxiliaryEpoch);
+    }
+
+    /** Called only after basic main/HUD (or by a later lane-only callback). All
+     * optional writes are complete snapshots on a bounded independent worker. */
+    private void renderAuxiliary(int id,Update u) {
+        if(auxiliary==null || !outputAllowed || !displayed || turnOwner!=id || u==null) return;
+        int maneuver=firstIndex(u), selected=selectedLane(id,u);
+        if(auxiliaryComponent!=id || auxiliaryManeuver!=maneuver || auxiliaryLane!=selected) {
+            invalidateAuxiliary();
+            auxiliaryComponent=id; auxiliaryManeuver=maneuver; auxiliaryLane=selected;
+        }
+        LaneRecord record=null;
+        byte[] lane=emptyLanes();
+        try { record=selectedRecord(id,u); if(record!=null) lane=record.rows.frame; }
+        catch(Throwable failed) { auxiliaryFailure("lane-select"); }
+        int[] pattern=emptyPattern();
+        try {
+            LinkedHashMap<Integer,Maneuver> known=maneuvers.get(id);
+            Maneuver current=known==null ? null : known.get(maneuver);
+            // Reuse the already accepted core distance. Do not add a vehicle
+            // property/Binder lookup to the optional-selection path.
+            double meters=lastPrimaryValid && lastPrimaryComponent==id && lastPrimaryManeuver==maneuver
+                    ? new Distance(lastPrimaryValue,lastPrimaryUnit).guideMeters(u.distNext) : -1d;
+            if(current!=null && u.state!=2 && u.state!=6 && meters>=0 && meters<=457) {
+                // Lane counts do not establish actual ramp curvature. The
+                // heuristic CpJunctions PE14 path stays unused until reviewed
+                // picture/input mappings are supplied in a later release.
+                // Only the existing native pattern with complete explicit road
+                // angles may be used; otherwise send the established clear.
+                int icon=current.primaryIcon(u.state);
+                int[] nativeTurn=standardTurnAtWindow(current,icon,meters,u.state,457);
+                int type=nativeTurn==null ? icon : nativeTurn[0];
+                int[] fallback=type>=13 && type<=18
+                        ? NativeJunction.pattern(current.type,current.junction,current.exit,current.angles) : null;
+                if(fallback!=null) pattern=fallback;
+            }
+        } catch(Throwable failed) { auxiliaryFailure("junction-select"); }
+        if(auxiliaryReports.size()<16) {
+            String detail="component="+id+" maneuver="+maneuver+" index="+selected
+                    +" source="+(record==null?"none":record.oem?"oem":"raw")
+                    +" exact="+(record!=null && record.rows.exact!=null?1:0)+" guide="+pattern[0];
+            if(auxiliaryReports.add(detail)) {
+                try { Dipo.log("USB_CP_TBT_AUX_SELECT "+detail); } catch(Throwable ignored) {}
+            }
+        }
+        if(diagnosticReady(3)) diagnostic(3,"component="+id+" maneuver="+maneuver+" index="+selected
+                +" source="+(record==null?-1:record.oem?1:0)+" exact="+(record!=null && record.rows.exact!=null?1:0)
+                +" laneAge="+(record==null?-1:Math.max(0,laneNow()-record.received))
+                +" templatePolicy=0 guide="+pattern[0]+" arrow="+pattern[1]+" frame="+frameNumbers(lane));
+        try { auxiliaryStarted=true; auxiliary.submit(lane,pattern,auxiliaryEpoch); }
+        catch(Throwable failed) { auxiliaryFailure("submit"); }
+    }
+
+    // A small, bounded sample lets a later USB history distinguish an input lane
+    // with no angles from unused frame padding. No road names or location are logged.
+    private void reportLanes(Iap2NotiMsg.Iap2ObjGroup[] lanes, byte[] frame) {
+        if (laneReports.size() >= 12) return;
+        StringBuilder report = new StringBuilder("input=").append(lanes.length)
+                .append(" output=").append(frame[1] & 255);
+        for (int i = 0; i < lanes.length && i < 8; i++) {
+            report.append(" lane").append(i).append('=');
+            Iap2NotiMsg.Iap2ObjGroup lane = lanes[i];
+            if (lane == null) { report.append("unknown"); continue; }
+            for (int j = 0; j < lane.getItemCnt(); j++) {
+                Iap2NotiMsg.Iap2ObjItem item = lane.getObjItem(j);
+                if (item == null || item.getItemId() < 1 || item.getItemId() > 3) continue;
+                int type = item.getItemParamType();
+                if (type != 5 && type != 8) continue;
+                int[] values = item.getItemIntArray();
+                if (values == null) continue;
+                report.append(item.getItemId()).append(':').append('[');
+                for (int k = 0; k < values.length && k < 4; k++) {
+                    if (k > 0) report.append(',');
+                    report.append(values[k]);
+                }
+                if (values.length > 4) report.append(",...");
+                report.append(']');
+            }
+        }
+        String detail = report.toString();
+        if(laneReports.add(detail)) {
+            try { Dipo.log("USB_CP_TBT_LANES "+detail); } catch(Throwable ignored) {}
+        }
+    }
+
+    /** Normalized primary/secondary union and phone-provided status; three
+     * independent 2-bit style fields use the verified glyph combinations. */
+    static int[] laneOne(Iap2NotiMsg.Iap2ObjGroup group) {
+        return CpLaneCallback.values(CpLaneCallback.row(group));
     }
 
     /** a lane angle (degrees, right positive) as the cluster's arrow: 1 straight, 2-4 right, 5 back, 6-8 left */
     static int laneIcon(int a) {
+        // Accept signed degrees and the reference build's unsigned full-circle
+        // representation. Out-of-range/sentinel values are not U-turn arrows.
+        if (a < -360 || a > 360) return 0;
         if (a > 180) a -= 360;
         else if (a < -180) a += 360;
         if (a >= 0) {
@@ -280,7 +675,18 @@ final class CpTurns {
     }
 
     private void clearTurn() {
-        if (!displayed) return;
+        lastPrimaryComponent = lastPrimaryManeuver = -1;
+        if (!outputAllowed) {
+
+            displayed = false;
+            turnOwner = -1;
+            lastPrimaryIcon = lastHudUnit = -1;
+            lastRoad = hudRoad = null;
+            hudHasDistance = false;
+            invalidateAuxiliary();
+            return;
+        }
+        if (!displayed) { clearAuxiliary(); return; }
         displayed = false;
         turnOwner = -1;
         lastPrimaryIcon = lastHudUnit = -1;
@@ -289,11 +695,12 @@ final class CpTurns {
         cluster.crossroadName("");
         hudBlank();
         hudHasDistance = false;
+        clearAuxiliary();
     }
 
     private void clearTrip() {
         cancelTripFlush();
-        if (tripOwner >= 0) {
+        if (outputAllowed && tripOwner >= 0) {
             cluster.destinationName(0, "");
             cluster.tbtSubInfo(0f, -1, 0, 0, 0, 0, 0, 0f, -1, 0);
         }
@@ -304,8 +711,13 @@ final class CpTurns {
 
     /** forget every component's state and maneuvers (DiPO e/u.nT) */
     void reset() {
+        laneInputGeneration++;
         maneuvers.clear();
         updates.clear();
+        laneFrames.clear();
+        phaseSeen.clear();
+        pendingPhase = null;
+        // Keep the rolling rate budget across source changes and reconnects.
     }
 
     /** SourceName (item 19) changed: clear the old app's leftovers and have the phone resend */
@@ -332,14 +744,20 @@ final class CpTurns {
     void turn(Integer id, Update u) {
         if (id < 0 || u == null) return;
         if (u.state == 0) {
+            laneInputGeneration++;
             maneuvers.remove(id);
+            laneFrames.remove(id);
             u.clear();
+            u.laneSessionEnded = true;
             if (turnOwner == id) clearTurn();
             if (tripOwner == id) clearTrip();
             return;
         }
         if (!outputAllowed) {
-            cancelTripFlush();
+            clearTurn();
+            clearTrip();
+            laneFrames.clear();
+            invalidateAuxiliary();
             return;
         }
         if (u.state < 0) return;
@@ -365,6 +783,17 @@ final class CpTurns {
                     + " displayUnit=" + u.nextUnits + " usable=" + (distance != null));
             lastDistanceAvailable = hasDistance;
         }
+        if(!hasDistance) {
+            if(diagnosticReady(4)) diagnostic(4,"component="+id+" maneuver="+firstIndex(u)
+                    +" fields="+u.inputFields+" clear="+u.distanceCleared+" raw="+u.distNext
+                    +" text="+(u.nextStr.isEmpty()?0:1)+" unit="+u.nextUnits+" state="+u.state);
+            // The existing invalid flag still displays 0m on this cluster. No
+            // verified numeric blank sentinel exists. Use the established whole
+            // maneuver clear contract; keep trip totals until actual distance
+            // arrives. A genuine raw/formatted zero remains a valid maneuver.
+            if(turnOwner==id) clearTurn();
+            return;
+        }
         int icon = x.primaryIcon(u.state);
         if ((icon == 0 || icon == 64) && missingManeuvers.size() < 12) {
             String fields = "type=" + x.type + " side=" + x.side + " junction=" + x.junction
@@ -385,10 +814,49 @@ final class CpTurns {
         }
         float value = distance == null ? 0f : distance.value;
         int unit = distance == null ? Cluster.UNIT_M : distance.unit;
-        if (icon != lastPrimaryIcon || unit != lastPrimaryUnit || value != lastPrimaryValue
+        double guideMeters = distance == null ? -1d : distance.guideMeters(u.distNext);
+        int mainIcon = icon, mainBar = 0;
+        float mainDirection = 0;
+        if (standardTurns && (hasDistance || u.state == 2)) {
+            // Some phones send only a formatted distance delta. It replaces stale
+            // raw meters in Update.read and can still drive the guide progress.
+            // Preserve its units/precision: do not truncate 300.1 m into the window.
+            int[] standard = standardTurn(x, icon, guideMeters, u.state);
+            if (standard != null) { mainIcon = standard[0]; mainDirection = standard[1]; mainBar = standard[2]; }
+        }
+        // A new maneuver may have the same numeric tuple. It still owns a new
+        // update; do not let deduplication retain the preceding maneuver's frame.
+        int maneuverIndex = firstIndex(u);
+        if (id != lastPrimaryComponent || maneuverIndex != lastPrimaryManeuver) {
+            lastPrimaryIcon = -1;
+            lastPrimaryComponent = id;
+            lastPrimaryManeuver = maneuverIndex;
+        }
+        // Korean Leafia r8.2's formatted main frame distinguishes projection
+        // glyphs (no native side street) from native turn geometry. This field
+        // is independent of the HUD F2 list, which retains projection glyphs.
+        int mainSideStreet = standardTurns && mainIcon >= 64 ? 65535 : 0;
+        // Item 10 describes the other roads; item 11 separately selects the exit.
+        // Only attach explicit, compatible ordinary-junction geometry to TURN.
+        if (standardTurns && mainIcon == 13 && x.junction == 0 && x.angles != null
+                && validAngle(x.exit) && compatibleExit(x, mainDirection)) {
+            NativeSideStreet.Result geometry = NativeSideStreet.map(x.angles, x.exit);
+            if (geometry != null) {
+                mainSideStreet = geometry.mask;
+                mainDirection = geometry.directionDegrees;
+            }
+        }
+        if (mainIcon != lastPrimaryIcon || mainDirection != lastPrimaryDirection || mainBar != lastPrimaryBar
+                || mainSideStreet != lastPrimarySide
+                || unit != lastPrimaryUnit || value != lastPrimaryValue
                 || hasDistance != lastPrimaryValid) {
-            cluster.tbtInfo(icon, 0, 0f, value, hasDistance ? 0 : -1, 0, unit, 0, 0);
-            lastPrimaryIcon = icon;
+            cluster.tbtInfo(mainIcon, mainSideStreet, (float) mainDirection, value, hasDistance ? 0 : -1, 0, unit, mainBar, 0);
+            tracePrimary(u.distNext >= 0 ? "raw" : hasDistance ? "display" : "none",
+                    guideMeters, mainIcon, mainDirection, mainBar, value, unit, hasDistance);
+            lastPrimaryIcon = mainIcon;
+            lastPrimaryDirection = mainDirection;
+            lastPrimaryBar = mainBar;
+            lastPrimarySide = mainSideStreet;
             lastPrimaryValue = value;
             lastPrimaryUnit = unit;
             lastPrimaryValid = hasDistance;
@@ -397,6 +865,138 @@ final class CpTurns {
         if (hasDistance || hudHasDistance) sendHudDist(value, unit);
         hudHasDistance = hasDistance;
         sendAhead(id, u);
+        renderAuxiliary(id, u);
+    }
+
+    /** Immediate, nonblocking gate for stock ownership takeover before a queued
+     * TBT-handler stop runs. An IPC already inside the framework cannot be canceled. */
+    void revokeAuxiliary() { auxiliaryAllowed=false; }
+
+    void setOutputAllowed(boolean allowed) {
+        if(allowed && !auxiliaryAllowed) {
+            invalidateAuxiliary(); // Never revive a queued old-owner clear.
+            auxiliaryAllowed=true;
+        }
+        if(!allowed) auxiliaryAllowed=false;
+        outputAllowed = allowed;
+        if (!allowed) { laneInputGeneration++; laneFrames.clear(); invalidateAuxiliary(); clearTurn(); clearTrip(); }
+    }
+
+    private static boolean compatibleExit(Maneuver x, float nativeDirection) {
+        // A typed right turn with a zero/left exit keeps its ordinary fallback;
+        // stale or contradictory geometry must not rotate that turn to straight.
+        int exit = ((x.exit % 360) + 360) % 360;
+        return Math.abs(exit - nativeDirection) < 0.01f;
+    }
+
+    /** Finite numeric samples of frames actually written, at most once a second.
+     * This observes the phone's distance, not vehicle position or a synthetic path.
+     * Millimetre-scaled integers avoid locale/exponent text in the USB allowlist. */
+    private void tracePrimary(String source, double meters, int type, float direction, int bar,
+            float value, int unit, boolean valid) {
+        long now = scheduler == null ? System.nanoTime() / 1000000L : scheduler.now();
+        if (primaryTraced && now - lastPrimaryTraceAt < 1000L) return;
+        primaryTraced = true;
+        lastPrimaryTraceAt = now;
+        Dipo.log("USB_CP_TBT_RENDER source=" + source + " metersMilli="
+                + (meters < 0d ? -1L : Math.round(meters * 1000d))
+                + " type=" + type + " direction=" + direction + " bar=" + bar
+                + " distanceMilli=" + Math.round((double) value * 1000d)
+                + " unit=" + unit + " valid=" + (valid ? 1 : 0));
+    }
+
+    /** Optional main-display format from HMG-API PR75's US NEEV evidence.
+     * iAP2 types are translated separately from Android Auto's unrelated enum.
+     * KOR appearance is unverified; unsupported input keeps its existing icon.
+     * The HUD F2 list always retains the projection icons above. */
+    static int[] standardTurn(Maneuver x, int icon, int meters) {
+        return standardTurn(x, icon, meters, 1);
+    }
+
+    static int[] standardTurn(Maneuver x, int icon, int meters, int state) {
+        return standardTurn(x, icon, (double) meters, state);
+    }
+
+    static int[] standardTurn(Maneuver x, int icon, double meters, int state) {
+        return standardTurnAtWindow(x,icon,meters,state,300);
+    }
+
+    private static int[] standardTurnAtWindow(Maneuver x,int icon,double meters,int state,int window) {
+        if (x != null && state == 2) return new int[] { 3, 0, 0 }; // explicit arrived state, as r8.2
+        if (x == null || Double.isNaN(meters) || meters < 0 || meters > window) return null;
+        int direction = -1, type = 13;
+        if (x.junction == 1 && (x.type == 1 || x.type == 2 || x.type == 7 || x.type == 19
+                || (x.type >= 28 && x.type <= 46)) && (x.side == 0 || x.side == 1)) {
+            int angle = x.type == 19 && !validAngle(x.exit) ? 180 : x.exit;
+            if (!validAngle(angle)) return null;
+            type = x.side == 0 ? 32 : 33;
+            direction = (angle + 360) % 360;
+        } else if (x.junction == 0) {
+            switch (x.type) {
+                case 1: case 20: direction=standardDirection(x,270,-1,0); break;
+                case 2: case 21: direction=standardDirection(x,90,1,0); break;
+                case 3: if (!validAngle(x.exit) || x.exit==0) direction=0; break;
+                case 0:
+                    direction=explicitIntersectionDirection(x);
+                    break;
+                case 5:
+                    direction=explicitIntersectionDirection(x);
+                    if (direction < 0 && (!validAngle(x.exit) || x.exit==0) && !x.textUTurn
+                            && (!validAngle(x.textAngle) || x.textAngle==0)) direction=0;
+                    break;
+                case 13: direction=standardDirection(x,315,-1,0); break;
+                case 14: direction=standardDirection(x,45,1,0); break;
+                case 47: direction=standardDirection(x,225,-1,2); break;
+                case 48: direction=standardDirection(x,135,1,2); break;
+                case 49: direction=standardDirection(x,315,-1,1); break;
+                case 50: direction=standardDirection(x,45,1,1); break;
+                case 4: case 18: case 26:
+                    if (x.side != 0 && x.side != 1) break;
+                    if (validAngle(x.exit) && x.exit!=0 && Math.abs(x.exit)<158) break;
+                    type=31; direction=x.side==0?270:90; break;
+                case 8:
+                    if (!validAngle(x.exit) || x.exit==0 || Math.abs(x.exit)==180) break;
+                    type=x.exit>0?17:18; direction=(x.exit+360)%360;
+                    break;
+                case 22: type=18; direction=standardDirection(x,270,-1,0); break;
+                case 23: type=17; direction=standardDirection(x,90,1,0); break;
+                default: break;
+            }
+        }
+        if (direction < 0) return null;
+        // Native SetCaseTurnPoint emits max(1, (100-progress)/10) nibbles.
+        // The owner verified ordinary stock TBT -> AR at300m in this car.
+        // Main CP/AA guidance shares that window; PE14 uses its own window.
+        // This does not infer dynamic thresholds for other road categories.
+        // Exact start may send100.
+        // No warning/trap frame is repurposed as a cursor-position channel.
+        // This controls the documented bar field; a passed-turn animation
+        // cannot be inferred from the numeric range accepted by the API.
+        int bar = Math.max(1, Math.min(10, (int) (meters * 10d / window))) * 10;
+        return new int[] { type, direction, bar };
+    }
+
+    /** Neutral follow-road guidance can still identify a real crossing. Native
+     * type13 carries the selected bearing plus explicit other arms, not only a
+     * left/right glyph. Require the same complete intersection evidence as the
+     * basic clock-direction icon; never promote text-only directions or invent
+     * arms from lane recommendations. The final side-street writer applies the
+     * native 22.5-degree bins (KOR stock capture includes direction67.5/mask1033).
+     */
+    private static int explicitIntersectionDirection(Maneuver x) {
+        if (x.junction != 0 || x.textUTurn || x.angles == null || x.angles.length < 2
+                || !validAngle(x.exit) || NativeSideStreet.map(x.angles, x.exit) == null) return -1;
+        return (x.exit + 360) % 360;
+    }
+
+    private static int standardDirection(Maneuver x, int fallback, int sign, int kind) {
+        // Leafia r8.2 directional() uses the typed turn's bearing when the
+        // selected angle is absent or zero. Keep nonzero contradictions below.
+        if (!validAngle(x.exit) || x.exit==0) return fallback;
+        int angle=x.exit, magnitude=Math.abs(angle);
+        if (magnitude>=180 || (angle<0?-1:1)!=sign) return -1;
+        if ((kind==1 && magnitude>67) || (kind==2 && magnitude<113)) return -1;
+        return (angle+360)%360;
     }
 
     /**
@@ -427,25 +1027,49 @@ final class CpTurns {
             case 47: return 69;
             case 48: return 68;
             case 5:
-            case 9:
                 return side == 0 && junction == 0 && exit == 0 ? 172 : 0;
+            // Gen5W GPM.setRampDisplayType: OFF_RAMP unknown/right/left =
+            // 86/81/82; ON_RAMP unknown/right/left = 172/173/174.
+            // A selected bearing gives the branch side, not the driving side.
+            case 8:
+                if (side != 0 || junction != 0) return 0;
+                return rampSide(exit) < 0 ? 82 : rampSide(exit) > 0 ? 81 : 86;
+            case 9:
+                if (side != 0 || junction != 0) return 0;
+                return rampSide(exit) < 0 ? 174 : rampSide(exit) > 0 ? 173 : 172;
             case 12: {   // arrive; state 2 (arrived): 3
                 int i = side == 0 && junction == 0 ? 112 : 0;
                 return state == 2 ? 3 : i;
             }
             case 15: return side == 0 && junction == 0 && exit == 0 ? 176 : 0;
-            case 22: return side == 0 && junction == 0 && exit == 0 ? 82 : 0;
-            case 23: return side == 0 && junction == 0 && exit == 0 ? 81 : 0;
+            case 22: return side == 0 && junction == 0 ? 82 : 0;
+            case 23: return side == 0 && junction == 0 ? 81 : 0;
             case 24: return side == 0 && junction == 0 && exit == 0 ? 114 : 0;
             case 25: return side == 0 && junction == 0 && exit == 0 ? 113 : 0;
-            case 52: return side == 0 && junction == 0 && exit == 0 ? 174 : 0;
-            case 53: return side == 0 && junction == 0 && exit == 0 ? 173 : 0;
+            case 51:
+                if (side != 0 || junction != 0) return 0;
+                // ChangeHighway has no verified generic glyph. Only choose its
+                // existing Left/Right glyph when the phone supplies a bearing.
+                return rampSide(exit) < 0 ? 174 : rampSide(exit) > 0 ? 173 : 0;
+            case 52: return side == 0 && junction == 0 ? 174 : 0;
+            case 53: return side == 0 && junction == 0 ? 173 : 0;
             default: return 0;
         }
     }
 
     static final int NO_ANGLE = Integer.MIN_VALUE;
     static boolean validAngle(int a) { return a >= -180 && a <= 180; }
+    /** r8.2's nativeTurn accepts a full signed revolution before normalizing it.
+     * Keep only the selected road (item 11): other junction arms are not exits.
+     * In particular 270 is the same left bearing as -90, not missing geometry. */
+    static int selectedAngle(int raw) {
+        if (raw < -360 || raw > 360) return NO_ANGLE;
+        return raw > 180 ? raw - 360 : raw < -180 ? raw + 360 : raw;
+    }
+    private static int rampSide(int angle) {
+        if (!validAngle(angle) || angle == -180 || angle == 180) return 0;
+        return angle < 0 ? -1 : angle > 0 ? 1 : 0;
+    }
     static boolean isRoundaboutType(int type) {
         return type == 6 || type == 7 || type == 19 || (type >= 28 && type <= 46);
     }
@@ -521,9 +1145,6 @@ final class CpTurns {
     /** HUD list and extras cleared (the build's sendHudBlank) */
     void hudBlank() {
         cluster.tbtSubInfo2C(0, 0, 0, 0, 0, 0, 0, 0, 0);
-        byte[] lanes = new byte[81];
-        lanes[0] = (byte) 0xF1;
-        cluster.laneInfo(lanes);
         hudType = -1;
         hudNext = 0;
         hudRoad = null;
@@ -628,6 +1249,21 @@ final class CpTurns {
         final float value;
         final int unit;
         Distance(float value, int unit) { this.value = value; this.unit = unit; }
+
+        /** Raw meters win over the display label. A formatted-only sample is
+         * approximate, but its known unit is sufficient for the 9-step guide bar. */
+        double guideMeters(int rawMeters) {
+            if (rawMeters >= 0) return rawMeters;
+            if (Float.isNaN(value) || Float.isInfinite(value) || value < 0f || value > 65535f) return -1d;
+            switch (unit) {
+                case Cluster.UNIT_M: return value;
+                case Cluster.UNIT_KM: return value * 1000d;
+                case Cluster.UNIT_MI: return value * 1609.344d;
+                case Cluster.UNIT_FT: return value * 0.3048d;
+                case Cluster.UNIT_YD: return value * 0.9144d;
+                default: return -1d;
+            }
+        }
 
         static Distance resolve(int metres, String text, int phoneUnit, int ownerUnit) {
             if (metres >= 0) {
@@ -743,7 +1379,8 @@ final class CpTurns {
         String road, destination, distLeftStr, nextStr, sourceName;
         long eta, arrivalFromDuration;
         int[] list;
-        boolean visible, lanesShown, supports;
+        boolean visible, lanesShown, laneSessionEnded, supports, maneuverStatePresent;
+        int inputFields,distanceCleared; // Presence mask; clear1=new maneuver,2=display-only,4=invalid raw.
 
         /** Component IDs come from the phone and may include zero. */
         Update(int id, Iap2NotiMsg msg) {
@@ -753,8 +1390,10 @@ final class CpTurns {
         }
 
         void clear() {
+            inputFields=0;distanceCleared=0;
             state = -1;
             maneuverState = 1;
+            maneuverStatePresent = false;
             road = "";
             destination = "";
             eta = 0;
@@ -768,9 +1407,10 @@ final class CpTurns {
             list = null;
             count = 0;
             visible = false;
-            laneIndex = 0;
-            laneCount = 0;
+            laneIndex = -1;
+            laneCount = -1;
             lanesShown = false;
+            laneSessionEnded = false;
             sourceName = "";
             supports = false;
         }
@@ -779,12 +1419,14 @@ final class CpTurns {
         void read(int id, Iap2NotiMsg msg) {
             Iap2NotiMsg.Iap2ObjGroup g = msg == null ? null : msg.getItemGroup();
             if (g == null) return;
+            inputFields=0;distanceCleared=0;
             int previousIndex = list == null || list.length == 0 ? -1 : list[0];
             boolean rawNext = false, textNext = false, rawTrip = false, textTrip = false;
             for (int k = 0; k < g.getItemCnt(); k++) {
                 Iap2NotiMsg.Iap2ObjItem it = g.getObjItem(k);
                 if (it == null) continue;
                 int item = it.getItemId(), n = it.getItemObjCount();
+                if(item>=0 && item<=20) inputFields|=1<<item;
                 switch (it.getItemParamType()) {
                     case 1:
                     case 5: {
@@ -798,7 +1440,7 @@ final class CpTurns {
                                 }
                                 break;
                             case 14: count = v != null && v.length > 0 ? v[0] : 0; break;
-                            case 16: laneIndex = v != null && v.length > 0 ? v[0] : 0; break;
+                            case 16: laneIndex = v != null && v.length > 0 ? v[0] : -1; break;
                             case 17: laneCount = v != null && v.length > 0 ? v[0] : 0; break;
                         }
                         break;
@@ -808,7 +1450,7 @@ final class CpTurns {
                         int[] v = n > 0 ? it.getItemIntArray() : null;
                         if (v == null || v.length == 0) break;
                         if (item == 7 && v[0] >= 0) { distLeft = v[0]; rawTrip = true; }
-                        else if (item == 10 && v[0] >= 0) { distNext = v[0]; rawNext = true; }
+                        else if (item == 10) { distNext = v[0] >= 0 ? v[0] : -1; rawNext = true; }
                         break;
                     }
                     case 3:
@@ -825,7 +1467,7 @@ final class CpTurns {
                         if (v == null || v.length == 0) break;
                         switch (item) {
                             case 1: state = v[0]; break;
-                            case 2: maneuverState = v[0]; break;
+                            case 2: maneuverState = v[0]; maneuverStatePresent = true; break;
                             case 9: distLeftUnits = v[0]; break;
                             case 12: nextUnits = v[0]; break;
                         }
@@ -855,12 +1497,14 @@ final class CpTurns {
             }
             int index = list == null || list.length == 0 ? -1 : list[0];
             if (previousIndex >= 0 && index != previousIndex) {
+                distanceCleared|=1;
                 if (!rawNext) distNext = -1;
                 if (!textNext) nextStr = "";
             }
             // A new formatted-only fix can supersede an older raw sample. A raw
             // field in this same packet takes priority regardless of item order.
-            if (textNext && !rawNext && Distance.resolve(-1, nextStr, nextUnits, -1) != null) distNext = -1;
+            if (textNext && !rawNext) { distNext = -1; distanceCleared|=2; }
+            if (rawNext && distNext < 0 && !textNext) { nextStr = "";distanceCleared|=4; }
             if (textTrip && !rawTrip && Distance.resolve(-1, distLeftStr, distLeftUnits, -1) != null) distLeft = -1;
         }
     }
@@ -881,14 +1525,17 @@ final class CpTurns {
         private static final java.util.regex.Pattern UTURN_TEXT = java.util.regex.Pattern.compile(
             "(?:(?:교차로|사거리|삼거리)에서\\s+)?유턴(?:하세요|합니다)?[.!]?");
 
+        private static int instructionAngle(String text) {
+            if (text == null) return NO_ANGLE;
+            java.util.regex.Matcher clock = CLOCK_TEXT.matcher(text.trim());
+            if (!clock.matches()) return NO_ANGLE;
+            int angle = (Integer.parseInt(clock.group(1)) % 12) * 30 + (clock.group(2) != null ? 15 : 0);
+            return angle <= 180 ? angle : angle - 360;
+        }
+
         private void setInstruction(String value) {
             description = value == null ? "" : value.trim();
-            java.util.regex.Matcher clock = CLOCK_TEXT.matcher(description);
-            textAngle = NO_ANGLE;
-            if (clock.matches()) {
-                int angle = (Integer.parseInt(clock.group(1)) % 12) * 30 + (clock.group(2) != null ? 15 : 0);
-                textAngle = angle <= 180 ? angle : angle - 360;
-            }
+            textAngle = instructionAngle(description);
             textUTurn = UTURN_TEXT.matcher(description).matches();
         }
 
@@ -930,8 +1577,22 @@ final class CpTurns {
                 label = (bearing % 15 == 0 ? "" : "약 ") + (hour == 0 ? 12 : hour)
                         + (halfHours % 2 == 0 ? "시 방향" : "시 30분 방향");
             }
-            String road = afterRoad == null ? "" : afterRoad;
+            // No tunnel-specific ManeuverType exists in the public CarPlay enum.
+            // Preserve the phone's supplied tunnel instruction instead of losing
+            // it when the phone describes that maneuver as straight/follow-road.
+            // This changes text only; it does not invent a cluster tunnel glyph.
+            if (label.isEmpty() && (type == 3 || type == 5) && description != null
+                    && description.contains("터널")) label = description;
+            String road = afterRoad == null ? "" : afterRoad.trim();
             if (label.isEmpty()) return road;
+            if (label.equals(road)) return road;
+            // Apps sometimes put a complete instruction in roadFollowingManeuver,
+            // e.g. "회전교차로에서 5시 방향". Retain that richer wording once.
+            // Match a complete instruction, never a substring in a road/POI name.
+            int labelAngle = instructionAngle(label), roadAngle = instructionAngle(road);
+            if (validAngle(labelAngle) && labelAngle == roadAngle) return road;
+            if ((label.equals("유턴") || label.equals("회전교차로 유턴"))
+                    && UTURN_TEXT.matcher(road).matches()) return road;
             return road.isEmpty() ? label : label + " · " + road;
         }
 
@@ -968,7 +1629,7 @@ final class CpTurns {
             exit = NO_ANGLE;
             textAngle = NO_ANGLE;
             textUTurn = false;
-            linkedLane = 0;
+            linkedLane = -1;
         }
 
         /** iAP2 maneuver deltas retain the previous fields for the same index. */
@@ -986,6 +1647,8 @@ final class CpTurns {
                 }
             }
             this.index = index;
+            boolean armsSeen = false, armsInvalid = false;
+            java.util.ArrayList<Integer> newArms = new java.util.ArrayList<Integer>();
             for (int k = 0; k < g.getItemCnt(); k++) {
                 Iap2NotiMsg.Iap2ObjItem it = g.getObjItem(k);
                 if (it == null) continue;
@@ -994,19 +1657,18 @@ final class CpTurns {
                     case 1: {
                         int[] v = n > 0 ? it.getItemIntArray() : null;
                         if (item == 10) {
-                            if (v != null) {
-                                angles = v.clone();
-                            } else {
-                                angles = null;
-                            }
-                        } else if (item == 11 && v != null && v.length > 0) {
-                            exit = validAngle(v[0]) ? v[0] : NO_ANGLE;
+                            armsSeen = true;
+                            if (v == null || v.length == 0 || v.length > 32
+                                    || newArms.size() + v.length > 32) armsInvalid = true;
+                            else for (int arm : v) newArms.add(arm);
+                        } else if (item == 11) {
+                            exit = v != null && v.length == 1 ? selectedAngle(v[0]) : NO_ANGLE;
                         }
                         break;
                     }
                     case 5: {
                         int[] v = it.getItemIntArray();
-                        if (item == 12 && v != null && v.length > 0) linkedLane = v[0];
+                        if (item == 12) linkedLane = v != null && v.length > 0 ? v[0] : -1;
                         break;
                     }
                     case 6: {
@@ -1036,6 +1698,10 @@ final class CpTurns {
                         break;
                     }
                 }
+            }
+            if (armsSeen) {
+                angles = armsInvalid ? null : new int[newArms.size()];
+                if (angles != null) for (int i = 0; i < angles.length; i++) angles[i] = newArms.get(i);
             }
         }
     }

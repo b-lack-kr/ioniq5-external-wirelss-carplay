@@ -1,0 +1,17 @@
+NativeSideStreet host verification
+
+Run from the v1.0.9 source directory:
+  mkdir -p /tmp/neev-native-side-test
+  javac -d /tmp/neev-native-side-test mod/src/hmgapi/mods/wireless/dipo/NativeSideStreet.java tests/NativeSideStreetTest.java
+  java -cp /tmp/neev-native-side-test NativeSideStreetTest
+
+The tests transcribe the native integer angle intervals into a separate table,
+exercise every signed input from -359 through 359 and check key combinations.
+Evidence: libExSLNavi.so SetSideStreetBit 0x2d7ba2c; details and exceptional
+branches are recorded in research/live-ar-session-20261107/ar-engine-analysis.txt.
+
+The helper assumes the incoming arm is the 180-degree native reference and the
+selected arm is entry 1. Its input is signed degrees, positive to the right. It
+rejects ambiguous selected back angles 168..192 degrees; ambiguous other arms
+are omitted. A missing angle array must not be passed as an empty array. The
+caller must exclude roundabouts and U-turns. No vehicle test is represented here.

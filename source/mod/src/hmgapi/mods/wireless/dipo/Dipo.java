@@ -85,17 +85,25 @@ public final class Dipo {
     public static void start(ModContext m, LoadedApp a) {
         mod = m;
         app = a;
-        tbt = m.settingBoolean("carplay_tbt", true);
-        bridge = m.settingBoolean("bridge", true);
+        CarPlayLocationTrace.install(m, a);
+        CarPlayAudioTrace.install(m, a);
+        CarPlayVideoTrace.install(m, a);
+        CarPlayVideoRecovery.install(m, a);
+        tbt = true; // Basic route guidance is part of the package, independent of AR.
+        bridge = true; // Required transport; obsolete stored toggles must not disable it.
         // the CarPlay libraries, patched in memory once DiPO loads them (files stay stock)
         if (bridge) m.nativePatch(a, "libCarPlayCore.so");   // AirPlay sessions over Wi-Fi
-        if (m.settingBoolean("audio", true)) {
+        { // Required wireless interface/audio patches.
             m.nativePatch(a, "libCarPlayCoreUtils.so"); // recognize the Realtek USB interface as Wi-Fi
             m.nativePatch(a, "libCarPlayAudio.so");   // offer AAC and Opus on Wi-Fi
             m.nativePatch(a, "libCarPlayUtils.so");   // its AudioConverter calls go to libleafiaaac.so
         }
         if (tbt) turnByTurn();
         if (bridge) bridge();
+        // Resolve CarPlay transport before supplemental-location lifecycle hooks.
+        if (bridge) CarPlayVehicleSpeed.install(m, a);
+        // Bridge classifies a session before the routing hooks see its callbacks.
+        if (bridge) CarPlayAudioRouting.install(m, a);
         if (!tbt && !bridge) return;
         Intent i = new Intent(IAP2_ACTION);
         boolean bound = a.context.bindService(i, new ServiceConnection() {
@@ -140,7 +148,7 @@ public final class Dipo {
                 if (listener != null) listener.restart();
             }
         }, new CpTurns.TripScheduler() {
-            public long now() { return android.os.SystemClock.uptimeMillis(); }
+            public long now() { return android.os.SystemClock.elapsedRealtime(); }
             public void later(Runnable work, long delay) { turnsHandler.postDelayed(work, delay); }
             public void cancel(Runnable work) { turnsHandler.removeCallbacks(work); }
             public Object owner() {
@@ -149,7 +157,8 @@ public final class Dipo {
                         || !Car.carPlayGuiding(app.context)) return null;
                 return listener.tripGeneration;
             }
-        });
+        }, mod.settingBoolean("ar_view", false),
+                NativePatternWriter.create(app.context), NativeLaneWriter.create(app.context));
         mod.hook(app.classLoader, "dipo.iap2_proxy.stop_route_guidance", new MethodHook() {
             @Override
             protected void beforeHookedMethod(Param p) {
@@ -233,12 +242,19 @@ public final class Dipo {
 
         void end(boolean disconnected) {
             if (rg != this) return;
+            // A disconnected session, like native takeover, no longer owns optional output.
+            // Revoke before the TBT handler runs so delayed clears cannot erase a new owner.
+            if (turns != null) turns.revokeAuxiliary();
             if (disconnected) component = 0;
             tripGeneration = new Object();
             final long ticket = epoch.incrementAndGet();
             post(new Runnable() { public void run() {
                 if (rg != RgListener.this || epoch.get() != ticket) return;
                 requested = receivedRoute = receivedManeuver = false;
+                // A stock takeover can precede this queued stop without another
+                // phone notification. Do not let a stale primary/trip gate clear it.
+                // Never reopen the auxiliary gate revoked above during a stop.
+                if (!disconnected && !Car.carPlayGuiding(app.context)) turns.setOutputAllowed(false);
                 turns.disconnected();
             }});
         }
@@ -273,7 +289,7 @@ public final class Dipo {
             final long ticket = epoch.get();
             post(new Runnable() { public void run() {
                 if (!current(ticket) || component == 0) return;
-                turns.outputAllowed = Car.carPlayGuiding(app.context);
+                turns.setOutputAllowed(Car.carPlayGuiding(app.context));
                 if (what == RG_UPDATE) {
                     if (!receivedRoute) log("USB_CP_TBT_RECEIVED route");
                     receivedRoute = true;

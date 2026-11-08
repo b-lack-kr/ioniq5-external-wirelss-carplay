@@ -13,13 +13,13 @@ case "$#:${1:-}" in
     *) stop '사용법: USB-준비-macOS.command [--prepare-only]' ;;
 esac
 folder=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P)
-kit_name=NEEV_260902_CarPlay_1.0.1_USB.zip
+kit_name=NEEV_260902_CarPlay_1.0.2_USB.zip
 release_base='@CARPLAY_RELEASE_BASE@'
 cache="$folder/HKG_5W_USBWifi_Hotspot.zip"
 ready="$folder/USB_READY"
 member=packages/usbwifi.hotspot.zip
 url=https://github.com/GRT47/HKG_5W_USB_Wlan/releases/download/v2.0.2/HKG_5W_USBWifi_Hotspot.zip
-kit_sha=17f565786fba31b93ad38d5d5a5f383b9f8fe7d1fab1b9368baa8a08de3167c9
+kit_sha=@CARPLAY_CORE_SHA256@
 upstream_sha=7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7
 member_sha=d9077ba275398c1578444fdea479a5675e21f1b36f9ad3217e57b65aeadc512b
 
@@ -36,7 +36,7 @@ download() {
         --output "$2" "$1"
 }
 
-printf '%s\n' '아이오닉 5 USB 무선 CarPlay 1.0.1 · by blackr'
+printf '%s\n' '아이오닉 5 USB 무선 CarPlay 1.0.2 · by blackr'
 work=$(/usr/bin/mktemp -d "$folder/.neev-usb.XXXXXXXX") || stop '압축을 푼 폴더에 쓸 수 없습니다. 다른 폴더로 옮겨 다시 실행하세요.'
 trap '/bin/rm -rf "$work"' 0
 trap 'exit 1' HUP INT TERM
@@ -46,9 +46,12 @@ if exists "$folder/$kit_name"; then
     [ -f "$folder/$kit_name" ] && [ ! -L "$folder/$kit_name" ] && cp "$folder/$kit_name" "$kit" || stop '옆에 있는 설치 ZIP을 읽지 못했습니다.'
 else
     printf '%s\n' 'by blackr 공식 릴리스에서 CarPlay 설치 파일을 받는 중입니다…'
-    download "$release_base/$kit_name" "$kit" || stop 'CarPlay 1.0.1 설치 파일을 받을 수 없습니다. 인터넷 연결을 확인하고 다시 실행하세요.'
+    download "$release_base/$kit_name" "$kit" || stop 'CarPlay 1.0.2 설치 파일을 받을 수 없습니다. 인터넷 연결을 확인하고 다시 실행하세요.'
 fi
-matches "$kit" "$kit_sha" || stop '설치 ZIP 검증에 실패했습니다. 1.0.1 공식 배포본을 확인하세요.'
+matches "$kit" "$kit_sha" || stop '설치 ZIP 검증에 실패했습니다. 1.0.2 공식 배포본을 확인하세요.'
+unzip -Z1 "$kit" > "$work/paths" || stop '설치 ZIP의 파일 목록을 읽지 못했습니다.'
+printf '%s\n' "$member" >> "$work/paths"
+expected_files=$(wc -l < "$work/paths" | tr -d ' ')
 mkdir "$stage"
 unzip -q "$kit" -d "$stage" || stop '설치 ZIP을 풀지 못했습니다.'
 
@@ -85,9 +88,9 @@ else
     [ -d "$ready" ] && [ ! -L "$ready" ] || conflict
     special=$(find "$ready" ! -type f ! -type d -print -quit) || conflict
     [ -z "$special" ] && diff -qr "$stage" "$ready" >/dev/null || conflict
-    printf '%s\n' '기존 USB_READY가 1.0.1 준비 파일과 일치합니다.'
+    printf '%s\n' '기존 USB_READY가 1.0.2 준비 파일과 일치합니다.'
 fi
-printf '\n%s\n%s\n' "$ready" 'USB 메모리의 기존 파일을 지운 뒤 USB_READY 안의 항목 5개를 USB 최상위에 복사하세요.'
+printf '\n%s\n%s\n' "$ready" 'USB 메모리의 기존 파일을 지운 뒤 USB_READY 안의 모든 항목을 USB 최상위에 복사하세요.'
 exit 0
 fi
 # Refresh one existing mounted volume. Partition tables, filesystem and label stay intact.
@@ -330,21 +333,30 @@ clean_install_metadata() {
     here_check
 }
 # Stream approved members without Finder metadata; publish the trigger only last.
-unzip -Z1 "$kit" > "$work/paths"
-printf '%s\n' "$member" >> "$work/paths"
 while IFS= read -r name; do
-    [ "$name" != NEMESIS.data ] || continue
+    case "$name" in NEMESIS.data|USB_AUTO.sh) continue;; esac
     case "$name" in */*) mkdir -p "${name%/*}";; esac
     (set -C; cat "$stage/$name" > "$name") || stop 'USB 파일 복사에 실패했습니다.'
 done < "$work/paths"
 sync
 clean_install_metadata || stop 'macOS 보조 파일을 정리하지 못했습니다. 설치 파일 검증을 중단합니다.'
 for root in NEEV_CP packages; do diff -qr "$stage/$root" "$root" >/dev/null || stop 'USB 파일 검증에 실패했습니다.'; done
-for root in NEMESIS.sh NEEV_CP_INSTALL.sh; do cmp -s "$stage/$root" "$root" || stop 'USB 실행 파일 검증에 실패했습니다.'; done
+while IFS= read -r name; do
+    case "$name" in NEMESIS.data|USB_AUTO.sh) continue;; esac
+    cmp -s "$stage/$name" "$name" || stop 'USB 설치 파일 검증에 실패했습니다.'
+done < "$work/paths"
+here_check || stop 'USB 연결이 바뀌어 설치 항목을 등록하지 않았습니다.'
+# Publish the auto-dispatch script only after its payload has passed readback;
+# NEMESIS.data remains the last activation step.
+auto_marker=.neev-autostart-$$
+! exists "$auto_marker" && ! exists USB_AUTO.sh || stop 'USB 자동 실행 파일이 이미 있습니다.'
+cat "$stage/USB_AUTO.sh" > "$auto_marker" && cmp -s "$stage/USB_AUTO.sh" "$auto_marker" &&
+    mv "$auto_marker" USB_AUTO.sh && sync && cmp -s "$stage/USB_AUTO.sh" USB_AUTO.sh ||
+    stop 'USB 자동 실행 파일 검증에 실패했습니다.'
 here_check || stop 'USB 연결이 바뀌어 설치 항목을 등록하지 않았습니다.'
 marker=.neev-descriptor-$$
 ! exists "$marker" && ! exists NEMESIS.data || stop 'USB 설치 지시 파일이 이미 있습니다.'
 cat "$stage/NEMESIS.data" > "$marker" && cmp -s "$stage/NEMESIS.data" "$marker" && mv "$marker" NEMESIS.data && sync &&
     cmp -s "$stage/NEMESIS.data" NEMESIS.data || stop 'USB 설치 지시 파일 검증에 실패했습니다.'
 clean_install_metadata || stop 'macOS 보조 파일 정리를 마치지 못했습니다. USB를 추출하기 전에 다시 준비하세요.'
-printf '\n%s\n' '완료. 기존 USB 형식과 파티션을 유지한 채 31개 설치 파일을 확인했습니다. Finder에서 USB를 추출한 뒤 차량에 꽂으세요.'
+printf '\n완료. 기존 USB 형식과 파티션을 유지한 채 %s개 설치 파일을 확인했습니다. Finder에서 USB를 추출한 뒤 차량에 꽂으세요.\n' "$expected_files"

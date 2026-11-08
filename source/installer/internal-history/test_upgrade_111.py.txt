@@ -1,0 +1,265 @@
+"""Authenticated 1.0.10 -> 1.0.15 upgrades retain the old transaction for rollback."""
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import unittest
+from zipfile import ZipFile
+
+import test_installer as fixture
+import test_missing_map as missing
+
+PUBLIC_110 = Path(os.environ.get('NEEV_PUBLIC_110_USB', str(
+    fixture.PROJECT / '배포용/1.0.10/NEEV_260902_CarPlay_1.0.10_USB.zip')))
+PUBLIC_110_SHA = '6b1d0798faa69601cbd264626238c2c100d4335c6f838128b4a81f0e31bad160'
+KIT_110_MD5 = '208ddce323c19685b0d0ecd36757d272'
+MOD_110_MD5 = '9d376dea3f6253484996c340e471983d'
+write = fixture.write
+
+
+def tree(folder):
+    return {str(p.relative_to(folder)): ('link', os.readlink(p)) if p.is_symlink()
+            else ('file', hashlib.sha256(p.read_bytes()).hexdigest()) if p.is_file()
+            else ('dir',)
+            for p in sorted(folder.rglob('*'))}
+
+
+class Upgrade111(unittest.TestCase):
+    run_usb = fixture.Installation.run_usb
+    public101 = fixture.Installation.public101
+    restore = fixture.Installation.restore
+
+    def setUp(self):
+        fixture.Installation.setUp(self)
+
+    def public110(self):
+        self.public101()
+        self.assertEqual(hashlib.sha256(PUBLIC_110.read_bytes()).hexdigest(), PUBLIC_110_SHA)
+        old = self.W/'public-1.0.10'
+        with ZipFile(PUBLIC_110) as z:
+            for name in z.namelist():
+                if name.startswith('NEEV_CP/') and not name.endswith('/'):
+                    dest = old/'kit'/name[len('NEEV_CP/'):]
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(z.read(name))
+        manifest = old/'kit/MANIFEST.md5'
+        self.assertEqual(fixture.md5(manifest.read_bytes()), KIT_110_MD5)
+        for line in manifest.read_text().splitlines():
+            digest, name = line.split()
+            self.assertEqual(fixture.md5((old/'kit'/name).read_bytes()), digest)
+        self.assertEqual(fixture.md5((old/'kit/payload/mod/META-HMGAPI/manifest.json').read_bytes()),MOD_110_MD5)
+        write(old/'STATUS','INSTALLED\n');write(old/'mode','1.0.9\n')
+        write(old/'backup/retained-prior-record','do not modify this rollback')
+        shutil.rmtree(self.M);shutil.copytree(old/'kit/payload/mod',self.M)
+        write(self.W/'UPGRADE_CURRENT.txt','1.0.10\n')
+        write(self.root/'hmg-version','hmgapid 1.0.2')
+        write(self.W/'vendor/hkg-2.0.2/asset','fixture\n')
+        write(self.H/'mods/neev-carplay-mute-pause/mod.json','unrelated mute package')
+        write(self.H/'settings/neev-carplay-mute-pause.json','{"enabled":false}')
+        return old
+
+    def assert_base(self, old_record, old_mod):
+        self.assertEqual(tree(self.W/'public-1.0.10'),old_record)
+        self.assertEqual(tree(self.M),old_mod)
+        self.assertEqual((self.W/'UPGRADE_CURRENT.txt').read_text().strip(),'1.0.10')
+        self.assertEqual((self.W/'config/hotspot.conf').read_text(),'prior-secret')
+        self.assertEqual((self.W/'config/ap-identity').read_text(),'prior-id')
+        self.assertEqual((self.H/'settings/neev-usb-carplay.json').read_text(),'{"carplay_tbt":false}')
+        self.assertEqual((self.H/'mods/neev-carplay-mute-pause/mod.json').read_text(),'unrelated mute package')
+        self.assertEqual((self.H/'settings/neev-carplay-mute-pause.json').read_text(),'{"enabled":false}')
+        self.assertFalse((self.M/'.disabled').exists())
+
+    def test_upgrade_repeat_and_restore_to_exact_110_preserve_records_settings_and_mute(self):
+        old=self.public110();old_record=tree(old);old_mod=tree(self.M)
+        self.assertEqual(self.run_usb(),'COMPLETE')
+        self.assertEqual((self.W/'UPGRADE_CURRENT.txt').read_text().strip(),'1.0.15')
+        self.assertEqual((self.R/'mode').read_text().strip(),'1.0.10')
+        self.assertEqual(tree(old),old_record)
+        self.assertEqual((self.W/'config/hotspot.conf').read_text(),'prior-secret')
+        self.assertEqual((self.W/'config/ap-identity').read_text(),'prior-id')
+        self.assertEqual((self.H/'settings/neev-usb-carplay.json').read_text(),'{"carplay_tbt":false}')
+        self.assertEqual((self.H/'mods/neev-carplay-mute-pause/mod.json').read_text(),'unrelated mute package')
+        self.assertEqual((self.H/'settings/neev-carplay-mute-pause.json').read_text(),'{"enabled":false}')
+        self.assertEqual(self.run_usb(),'COMPLETE')
+        self.restore();self.assert_base(old_record,old_mod)
+        # Enabled independent consumers intentionally retain their shared map.
+        self.assertTrue(self.map.is_dir())
+        (self.usb/'NEEV-CP-RESTORE').unlink();self.assertEqual(self.run_usb(),'COMPLETE')
+        self.assertEqual((self.W/'UPGRADE_CURRENT.txt').read_text().strip(),'1.0.15')
+
+    def test_enabled_independent_mute_is_unchanged_on_upgrade_and_rollback(self):
+        self.public110()
+        addon=self.H/'mods/neev-carplay-mute-pause'
+        settings=self.H/'settings/neev-carplay-mute-pause.json'
+        write(addon/'hooks.jar','independent signed payload')
+        write(settings,'{"enabled":true,"pause_on_mute":true}')
+        before=tree(addon);prefs=settings.read_bytes()
+        self.assertEqual(self.run_usb(),'COMPLETE')
+        self.assertEqual(tree(addon),before);self.assertEqual(settings.read_bytes(),prefs)
+        self.restore()
+        self.assertEqual(tree(addon),before);self.assertEqual(settings.read_bytes(),prefs)
+        self.assertTrue(self.map.is_dir())
+
+    def test_109_110_111_upgrade_and_restore_preserve_both_actual_release_kits(self):
+        old110 = self.public110()
+        old109 = self.W/'public-1.0.9'
+        release109 = fixture.PROJECT/'배포용/1.0.9/NEEV_260902_CarPlay_1.0.9_USB.zip'
+        self.assertEqual(hashlib.sha256(release109.read_bytes()).hexdigest(),
+                         '0eb75dc5798888669cc44df2edc034a5ea488557e4829253472b3e05925ba373')
+        with ZipFile(release109) as z:
+            for name in z.namelist():
+                if name.startswith('NEEV_CP/') and not name.endswith('/'):
+                    dest = old109/'kit'/name[len('NEEV_CP/'):]
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(z.read(name))
+        write(old109/'STATUS', 'INSTALLED\n'); write(old109/'mode', '1.0.7\n')
+        old109_record = tree(old109); old110_record = tree(old110); old_mod = tree(self.M)
+        self.assertEqual(self.run_usb(), 'COMPLETE')
+        self.assertEqual(tree(old109), old109_record)
+        self.assertEqual(tree(old110), old110_record)
+        self.restore()
+        self.assert_base(old110_record, old_mod)
+        self.assertEqual(tree(old109), old109_record)
+
+    def test_manual_uninstall_110_then_clean_110_retains_authenticated_archive(self):
+        old=self.public110();old_record=tree(old)
+        shutil.rmtree(self.M);(self.H/'state/applied.fixture').unlink()
+        write(self.usb/'packages/usbwifi.hotspot.zip','vendor-fixture')
+        self.assertEqual(self.run_usb(),'COMPLETE')
+        self.assertEqual((self.R/'mode').read_text().strip(),'fresh')
+        archives=list(self.W.parent.glob('neev-usbcp-removed-*'))
+        self.assertEqual(len(archives),1)
+        self.assertEqual(tree(archives[0]/'public-1.0.10'),old_record)
+        self.assertEqual((archives[0]/'.manual-uninstall-settings.json').read_text(),'{"carplay_tbt":false}')
+        self.assertFalse((self.H/'settings/neev-usb-carplay.json').exists())
+        self.assertEqual((archives[0]/'config/ap-identity').read_text(),'prior-id')
+        self.assertEqual((self.H/'settings/neev-carplay-mute-pause.json').read_text(),'{"enabled":false}')
+
+    def test_damaged_removed_110_record_is_not_archived_or_replaced(self):
+        old=self.public110()
+        shutil.rmtree(self.M);(self.H/'state/applied.fixture').unlink()
+        write(self.usb/'packages/usbwifi.hotspot.zip','vendor-fixture')
+        write(old/'kit/operate.sh','damaged previous kit')
+        before=tree(self.W);hmg=tree(self.H)
+        self.assertEqual(self.run_usb(False),'UNOWNED_REMOVED_SETUP')
+        self.assertEqual(tree(self.W),before);self.assertEqual(tree(self.H),hmg)
+        self.assertFalse(list(self.W.parent.glob('neev-usbcp-removed-*')))
+
+    def test_removed_completed_110_upgrade_retains_both_authenticated_records(self):
+        old=self.public110();self.run_usb()
+        old_record=tree(old);current_record=tree(self.R)
+        shutil.rmtree(self.M);(self.H/'state/applied.fixture').unlink()
+        write(self.usb/'packages/usbwifi.hotspot.zip','vendor-fixture')
+        self.assertEqual(self.run_usb(),'COMPLETE')
+        self.assertEqual((self.R/'mode').read_text().strip(),'fresh')
+        archives=list(self.W.parent.glob('neev-usbcp-removed-*'))
+        self.assertEqual(len(archives),1)
+        self.assertEqual(tree(archives[0]/'public-1.0.10'),old_record)
+        self.assertEqual(tree(archives[0]/'public-1.0.15'),current_record)
+
+    def test_failed_install_restores_exact_110_map_receipt_and_prior_record(self):
+        old=self.public110();old_record=tree(old);old_mod=tree(self.M)
+        write(self.root/'fault','engine-install')
+        self.assertEqual(self.run_usb(False),'INSTALL_FAILED_RESTORED')
+        self.assert_base(old_record,old_mod)
+        self.assertEqual((self.map/'car.json').read_text(),'previous-map')
+        self.assertEqual((self.H/'state/map-check.json').read_text(),'previous-map-check')
+        self.assertEqual((self.R/'STATUS').read_text().strip(),'RESTORED')
+        self.assertEqual(self.run_usb(),'COMPLETE')
+
+    def test_failed_map_verification_restores_110_without_mod_install(self):
+        old=self.public110();old_record=tree(old);old_mod=tree(self.M)
+        write(self.root/'fault','engine-verify-map')
+        self.assertEqual(self.run_usb(False),'INSTALL_FAILED_RESTORED')
+        self.assert_base(old_record,old_mod)
+        self.assertEqual((self.map/'car.json').read_text(),'previous-map')
+        self.assertEqual((self.H/'state/map-check.json').read_text(),'previous-map-check')
+        self.assertFalse((self.R/'backup/mod-install-started').exists())
+
+    def test_interrupted_mod_install_rolls_back_after_reboot_and_can_retry(self):
+        old=self.public110();old_record=tree(old);old_mod=tree(self.M)
+        write(self.root/'fault','engine-install-crash')
+        self.run_usb(False)
+        self.assertEqual((self.R/'STATUS').read_text().strip(),'INSTALLING')
+        write(self.root/'proc/sys/kernel/random/boot_id','cdef-cdef')
+        self.assertEqual(self.run_usb(),'COMPLETE')
+        self.assert_base(old_record,old_mod)
+        self.assertEqual((self.R/'STATUS').read_text().strip(),'RESTORED')
+        self.assertEqual(self.run_usb(),'COMPLETE')
+
+    def test_unknown_or_damaged_110_kit_is_rejected_before_staging(self):
+        old=self.public110();write(old/'kit/operate.sh','changed old transaction')
+        state=tree(self.H)
+        self.assertEqual(self.run_usb(False),'UNOWNED_PUBLIC_110')
+        self.assertFalse(self.R.exists());self.assertEqual(tree(self.H),state)
+
+    def test_tampered_installed_110_is_rejected_before_live_changes(self):
+        self.public110();write(self.M/'hooks.jar','tampered')
+        state=tree(self.H)
+        self.assertEqual(self.run_usb(False),'EXISTING_MOD_SIGNATURE')
+        self.assertEqual(tree(self.H),state)
+        self.assertEqual((self.W/'UPGRADE_CURRENT.txt').read_text().strip(),'1.0.10')
+        self.assertEqual((self.R/'STATUS').read_text().strip(),'PREPARED')
+
+    def test_unfinished_or_disabled_110_is_rejected(self):
+        old=self.public110()
+        for status in ('PREPARED','INSTALLING','RESTORING','RESTORED','unknown'):
+            with self.subTest(status=status):
+                write(old/'STATUS',status)
+                self.assertEqual(self.run_usb(False),'UNOWNED_PUBLIC_110')
+                self.assertFalse(self.R.exists())
+        write(old/'STATUS','INSTALLED');write(self.M/'.disabled','')
+        self.assertEqual(self.run_usb(False),'EXISTING_MOD_DISABLED')
+        self.assertFalse(self.R.exists())
+
+    def test_unrecognized_110_origin_is_rejected_before_live_changes(self):
+        old=self.public110()
+        write(old/'mode','1.0.8')
+        before=tree(self.H)
+        self.assertEqual(self.run_usb(False),'UNOWNED_PUBLIC_110')
+        self.assertEqual(tree(self.H),before);self.assertFalse(self.R.exists())
+
+    def test_old_prepared_kit_under_new_release_path_is_not_refreshed_or_executed(self):
+        old=self.public110()
+        shutil.copytree(old/'kit',self.R/'kit')
+        write(self.R/'STATUS','PREPARED');write(self.R/'mode','1.0.10')
+        state=tree(self.W)
+        self.assertEqual(self.run_usb(False),'LOCAL_TRANSACTION_DAMAGED')
+        self.assertEqual(tree(self.W),state)
+
+    def test_manual_removal_after_110_rollback_can_clean_install_without_losing_archive(self):
+        self.public110();self.run_usb();self.restore();(self.usb/'NEEV-CP-RESTORE').unlink()
+        shutil.rmtree(self.M);(self.H/'state/applied.fixture').unlink()
+        write(self.usb/'packages/usbwifi.hotspot.zip','vendor-fixture')
+        self.assertEqual(self.run_usb(),'COMPLETE')
+        self.assertEqual((self.R/'mode').read_text().strip(),'fresh')
+        archives=list(self.W.parent.glob('neev-usbcp-removed-*'))
+        self.assertEqual(len(archives),1)
+        self.assertTrue((archives[0]/'public-1.0.10/kit/MANIFEST.md5').is_file())
+
+    def test_existing_new_transaction_tamper_prevents_install_and_rollback(self):
+        self.public110();self.run_usb();write(self.R/'kit/operate.sh','foreign')
+        current=tree(self.H)
+        self.assertEqual(self.run_usb(False),'LOCAL_TRANSACTION_DAMAGED')
+        write(self.usb/'NEEV-CP-RESTORE','')
+        self.assertEqual(self.run_usb(False),'LOCAL_TRANSACTION_DAMAGED')
+        self.assertEqual(tree(self.H),current)
+
+    def test_unknown_active_version_is_not_treated_as_110(self):
+        self.public110();write(self.W/'UPGRADE_CURRENT.txt','1.0.10.9')
+        self.assertEqual(self.run_usb(False),'UNOWNED_SETUP')
+        self.assertFalse(self.R.exists())
+
+    def test_missing_map_110_recovery_uses_real_verification(self):
+        old=self.public110();shutil.rmtree(self.map)
+        mock=(self.bin/'app_process').read_text().replace(
+            " elif op=='map':print('hook map: probed for Ioniq 5, hooks on')",
+            " elif op=='map':\n  print('hook map: probed for Ioniq 5, hooks on' if (H/'maps/hyundai/neev/kor/260902').exists() else "+repr(missing.NO_MAP)+")")
+        write(self.bin/'app_process',mock,True)
+        self.assertEqual(self.run_usb(),'COMPLETE')
+        self.assertEqual((self.R/'map-before.log').read_text().strip(),missing.NO_MAP)
+        self.assertTrue((self.R/'verify-map.log').is_file())
+        self.assertEqual((self.H/'state/map-check.json').read_text(),'checked here')
+
+
+if __name__=='__main__':unittest.main(verbosity=2)

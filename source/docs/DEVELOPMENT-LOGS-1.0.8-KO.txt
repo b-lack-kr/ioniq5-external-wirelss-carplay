@@ -1,0 +1,13 @@
+1.0.8 상시 로그와 USB 수집
+
+차량 내부의 기존 최대8MiB 순환 로그를 사용합니다. 같은 버전 설치 USB 재연결/Yes는 로그 수집입니다.
+USB_CP_TBT_RENDER: 실제 main 전송 타입·각도·bar·거리(최대1Hz).
+USB_CP_NATIVE_TBT: 휴대전화 안내가 없을 때의 순정 main/거리 수치.
+USB_CP_NATIVE_AR: 순정 trap bar와 CluData14 숫자. 인자 수정·재전송·IPC 없음, writer당 최대1Hz.
+USB_CP_TBT_PHASE: 수신 item2의 raw 회전 단계, 실제 수신 여부, route/component/maneuver/거리. 변경만 기록하고 초당8회로 제한합니다.
+phase present=0이면 초기값일 뿐 휴대전화가 보낸 상태로 해석하지 않습니다. dropped는 제한으로 기록하지 못한 변경 시도 수입니다.
+과거1.0.7 USB_CP_TBT_PROGRESS 기록은 읽을 수 있지만 이번 버전은 더 이상 생성하지 않습니다.
+상태 숫자·수신 여부를 별도 검증하기 전 Apple 앱 enum 숫자나 현대 PREPARE enum 숫자로 이름 붙이지 않습니다.
+
+문제 발생시각을 메모하고, NEMESIS에서 삭제하기 전에 USB로 기록을 수집하세요.
+숫자 기록에는 도로명·목적지·위도/경도·SSID·VIN을 넣지 않습니다. 일반 연결/영상/음량 기록은 기존 수집 정책을 유지합니다.

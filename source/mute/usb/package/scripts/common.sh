@@ -32,9 +32,36 @@ installed_release() {
     verify_installed
 }
 has_installed() { [ -e "$MOD" ] || [ -L "$MOD" ]; }
+# HMG-API's minimum version is independent of the pinned CarPlay release records.
+# Parse canonical decimal components without shell arithmetic (overflow/octal safe).
+hmg_api_error() { HMG_STATUS=$1; HMG_NOTICE=$2; return 1; }
+hmg_api_ready() {
+    [ -x /system/bin/hmgapid ] || { hmg_api_error HMG_API_MISSING 'HMG-API 실행 파일이 없습니다. HMG-API 설치를 확인하세요'; return 1; }
+    hmg_version=$(/system/bin/hmgapid version 2>/dev/null) || { hmg_api_error HMG_API_VERSION_UNAVAILABLE 'HMG-API 버전을 읽지 못했습니다. HMG-API 설치 상태를 확인하세요'; return 1; }
+    case "$hmg_version" in
+        'hmgapid '*) hmg_version=${hmg_version#hmgapid };;
+        *) hmg_api_error HMG_API_VERSION_INVALID 'HMG-API 버전 형식을 확인할 수 없습니다. 정식 버전 설치를 확인하세요'; return 1;;
+    esac
+    case "$hmg_version" in
+        ''|*[!0-9.]*|*.*.*.*) hmg_api_error HMG_API_VERSION_INVALID 'HMG-API 버전 형식을 확인할 수 없습니다. 정식 버전 설치를 확인하세요'; return 1;;
+        *.*.*) ;;
+        *) hmg_api_error HMG_API_VERSION_INVALID 'HMG-API 버전 형식을 확인할 수 없습니다. 정식 버전 설치를 확인하세요'; return 1;;
+    esac
+    hmg_major=${hmg_version%%.*}; hmg_rest=${hmg_version#*.}
+    hmg_minor=${hmg_rest%%.*}; hmg_patch=${hmg_rest#*.}
+    for hmg_part in "$hmg_major" "$hmg_minor" "$hmg_patch"; do
+        case "$hmg_part" in
+            ''|0?*) hmg_api_error HMG_API_VERSION_INVALID 'HMG-API 버전 형식을 확인할 수 없습니다. 정식 버전 설치를 확인하세요'; return 1;;
+        esac
+    done
+    # This is only the declared minimum. Signing, engine and map checks still run.
+    if [ "$hmg_major" = 0 ] || { [ "$hmg_major" = 1 ] && [ "$hmg_minor" = 0 ] && [ "$hmg_patch" = 0 ]; }; then
+        hmg_api_error HMG_API_TOO_OLD 'HMG-API 1.0.1 이상이 필요합니다. HMG-API를 업데이트하세요'; return 1
+    fi
+    /system/bin/hmgapid ping >/dev/null 2>&1 || { hmg_api_error HMG_API_DAEMON_UNAVAILABLE 'HMG-API 데몬이 응답하지 않습니다. 내비 재부팅 후 다시 실행하세요'; return 1; }
+}
 engine_ready() {
-    [ "$("$H" version)" = 'hmgapid 1.0.1' ] || fail HMG_API_101_REQUIRED
-    "$H" ping >/dev/null || fail HMG_API_NOT_RUNNING
+    hmg_api_ready || fail "$HMG_STATUS" "$HMG_NOTICE"
     [ ! -e /data/hmgapi/state/journal.json ] || fail UNFINISHED_HMG_TRANSACTION
 }
 check_install() {

@@ -1,0 +1,69 @@
+1.0.15 전원 종료 관측 로그
+
+기존 1.0.14의 전원 정책을 유지하며, 판단에 사용한 입력과 AP가 선택한 결정 출처를 추가 기록한다.
+이 변경은 MICOM/BCM/USB 전원을 쓰지 않는다. USB5V차단 기능을 추가하는 것도 아니다.
+
+AP_POWER_INPUT
+HeadUnitPower가 기록한다. 정상 유지 중10초마다, ON/OFF 판단이 바뀌면 최대1초1회다.
+각 필드는 숫자와 내부 고정 상태 이름이며 부팅ID/차량ID/파일내용/원시메시지는 포함하지 않는다.
+elapsed_ms: 부팅 이후 관측 시각. decision_ns: 실제 정책 결정 시각으로 heartbeat와 별개다.
+state/reason: 기존 RetainedPower의 결정 및 사유.
+micom_raw/getter_off/preparing: 마지막 poll의 MICOM상태와 isPowerOff/isPreparingSystemOff 값.
+ignition/ignition_live/ignition_age_ms: 마지막 시동 콜백 값, 등록중 replay인지, 관측 후 시간.
+acc_raw/acc_live/acc_age_ms: BCM ACC 콜백의 raw값과 같은 정보. MICOM raw와 enum을 혼용하지 않는다.
+driver_door/driver_door_age_ms: FRONT_LEFT 운전석 문 값(0닫힘/1열림)과 관측 후 시간.
+micom_event_raw: 마지막 MICOM 상태 콜백 raw값.
+polls/poll_failures/ignition_events/acc_events/door_events/micom_events/prepare_events/off_events:
+  이번 로그 구간에 관측한 각 입력 수. 미관측 숫자는-1, 횟수는0이다.
+door_events는 다른 문 콜백도 포함하지만 driver_door값은 운전석 이벤트만 반영한다.
+입력 로그는 전원 판단을 하지 않으며 정책을 변경하지 않는다.
+
+AP_POWER_DECISION
+AP supervisor가 입력/선택 결과가 바뀔 때 기록한다. 같은 heartbeat는 중복 출력하지 않는다.
+paused: AP 종료/대기 판단. source: 선택 근거(EVENT/READER/BASELINE 등).
+decision_ns: 마지막 채택된 전원 판단 시각.
+event/event_ns: DiPO→Provider event파일의 유효성/상태와 시각.
+reader/reader_state/reader_ns/reader_reason: reader파일 유효성/논리상태/시각/사유.
+reader=ABSENT는 파일 미확보, INVALID는 검증실패, STALE은 ON샘플/reader가 오래됐거나
+  살지 않는 경우, SKIPPED는 잘못된 event파일 등 기존 fail-closed경로에서 reader판단을 건너뛴 경우다.
+source=INVALID_EVENT/REMOVED_EVENT는 기존 보호 정책으로 종료 판단이 유지된 경우다.
+event가 오래된ON이고reader가새OFF일때 source=READER paused=1이어야 한다.
+AP_EVENT HU_POWER_OFF, STOP_TIMEOUT, AP_LINK_DOWN_FAILED 등 기존 실행 결과와 함께 비교하면
+입력 콜백 누락 / 잘못된 우선순위 / 실제 AP종료 실패를 구분하는 근거가 된다.
+
+한계
+콜백이 아예 오지 않으면 그 원인이 OEM서비스등록/펌웨어상태 중 무엇인지는 추가 판단이 필요하다.
+로그 출력 직후 기기가 잠들거나 저장이 끝나기 전에 전원이 꺼지면 마지막 기록은 유실될 수 있다.
+새 로그는 소프트웨어의 관측값이며 물리 USB 전압을 측정한 기록이 아니다.
+
+저장 한도
+AP_POWER_INPUT은 /data/local/tmp/neev_usbcp/power-input.log 및 .1,
+AP_POWER_DECISION은 같은 폴더의 power-decision.log 및 .1에만 저장한다.
+각 파일64KiB, 종류별 현재+이전1개 총128KiB, 두 종류 합계 최대256KiB다.
+새 전용 로그를 daemon_stdout.log에 중복 출력하지 않는다. 매 append마다
+파일을 열고 닫아 회전 후 이전 inode에 계속 기록되지 않는다. 권한0600,
+심볼릭 링크/비정상 파일 거부, 기존 초과 파일 제거, 저장 실패 시 전원 정책과
+reader 생존에 영향을 주지 않는 동작을 호스트에서 검증했다.
+USB 수집은 현재와 .1을 함께 읽으며 이전 버전에서 파일이 없으면 건너뛴다.
+
+검증된 Goodbye/Welcome 시작 신호 연결
+WelcomeService의 실제 송신 경로에서 확인한 시작 신호만 별도 command2로
+기존 PowerQueue → Provider → PowerLatch → power-event에 전달한다.
+Provider는 command2를 uid1000 및 정확한 com.mobis.welcome 프로세스에만
+허용한다. 기존 command1은 com.daudio.app.dipo 전용으로 계속 분리한다.
+일반 broadcast action을 다른 앱이 발송했다고 전원 상태를 바꾸지 않는다.
+
+Goodbye 시작은 OFF를 같은 부팅 안에서 유지하고 AP 상태 조회의 진행 중
+결과도 무효화한다. Welcome 시작은 ON을 같은 경로로 보내 Provider의
+OFF 요구 상태와 supervisor가 읽는 power-event를 함께 해제한다.
+ON 직후 연결됐다고 가정하지 않고 실제 AP 관측이 성공해야 ready가 된다.
+기존 명시적 DiPO ON 복귀도 유지한다. 끝남(status0), 불명확한 모드,
+단순 화면 꺼짐·켜짐만으로 ON/OFF를 추측하지 않는다.
+외부 동글 설정 OFF 상태에서는 이 ON 이벤트로 동글 사용을 강제하지 않는다.
+
+USB_CP_POWER 및 CP_POWER의 source=DIPO|WELCOME 필드는 신호 출처다.
+queued/delivered/superseded/retry 및 accepted/duplicate/rejected/failed와
+기존 AP_POWER_DECISION/AP_EVENT를 함께 읽으면 hook 발생, 영구 기록,
+실제 AP 종료 중 어디에서 실패했는지 구분할 수 있다. 프로세스 식별자나
+원시 방송 내용은 로그에 포함하지 않는다. 기존 restored 로그는 출처 없이
+이전 결정 상태만 보고한다. 물리 USB5V 전원 차단을 의미하지 않는다.

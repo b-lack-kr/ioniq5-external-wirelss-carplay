@@ -1,0 +1,266 @@
+Captured exact Korean NEEV 260902 native navigation. Firmware binaries are local research only and excluded from the release.
+
+{
+  "libExSLNavi.so": {
+    "size": 73071824,
+    "sha256": "de162d7015504906105037ae306d1514655791bc04d5e8a5caed10ff476b73b3"
+  },
+  "libExSLAndroidJNI.so": {
+    "size": 489184,
+    "sha256": "ab08368ec423e5a770e1729ae604c68185920d83c969bb18ae4b70b8f006cd38"
+  },
+  "carplay.log": {
+    "size": 674064,
+    "sha256": "ad53de4a6f13522eb9b2cc85eb853bfef92a51ce5acd3efe7e4d401751063377"
+  }
+}
+
+
+정확 차량 libExSLNavi.so: AR/클러스터 진행 조사 (정적 분석만)
+
+입력 ELF: 73,071,824 bytes, SHA-256
+de162d7015504906105037ae306d1514655791bc04d5e8a5caed10ff476b73b3.
+ARM Thumb 함수임을 확인하고 `llvm-objdump -d --triple=thumbv7-linux-android
+--demangle`을 사용했다. 아래 주소는 파일의 ELF 가상주소이며 별도 실행은
+하지 않았다. 이름과 화면 결과가 같다는 가정은 하지 않는다.
+
+1. 순정 주 TBT bar 생성 경로
+FrameCluster::ClusterUpdate 0x262bf32 -> updateTurnData 0x2628176 ->
+SetTurnData 0x2628086..8e은 stItem+43 byte를 internal CLU_PE_02의 bar
+high nibble에 복사한다. sendTurnData 0x2628f8a..9a는 ID1006으로 추출한다.
+API에서는 보통 이 nibble의 10배가 barGraphLevel이다.
+
+CInformation::MakeClusterData 0x2d7ccd6의 가상슬롯 +0x8c는 vtable
+0x4512384에 있는 IsMainGuide(0x2d7b70c), +0x68은 SetClusterTBTInfo,
+그 안 +0x70은 SetCaseTurnPoint다. 확인은 vtable 0x45122f0의 Itanium
+address-point(+8) 및 해당 R_ARM_RELATIVE addend를 이용했다.
+
+IsMainGuide는 IsILSGuide 성공값을 우선하고 실패하면 IsJunctionGuide를
+호출한다. 해당 guide가 선택되면 참조 출력 p는 각각 ILS stItem+12,
+JunctionView stItem+16의 byte. 두 값 모두 동일한
+CJunctionViewGuidance::GetRemainDistRatio 0x24c9dfc에서 생산된다.
+JunctionView ParseItem 0x277eb46..4a, ILS ParseItem 0x2468b08..10.
+
+해당 함수는 안내 비활성·D=0·remaining>=D이면 p=0, remaining=0이면
+p=100, 0<remaining<D이면 p=100-floor(100*remaining/D)이다(보통의
+비오버플로 정수 범위). D는 CRGTarget::GetDynamicGuideDist(3)의 결과를
+타깃 객체+912에 처음 기록해 재사용한다. 나눗셈 veneer 0x286dd50은
+__aeabi_uidiv 0x36c471c로 확인했다.
+
+실제 turn-point 성공 분기 SetCaseTurnPoint 0x2d7cf0a..1e의 출력은
+nibble = max(1, floor((100-p)/10))이며 stItem+43에 기록한다. p=0이면
+10(주 API 100), p=1이면 9(90), p=90..100이면 1(10). p=100에서 0을
+쓰지 않는다. p=0 경계에서 실제 차량 안내조건이 참인지 여부는 별도다.
+r8.2/현재 1.0.8의 457m·상한90은 이 순정 경로의 일반적 규칙으로
+확정할 수 없다. 현재 전화 메시지의 거리는 D를 제공한다고 확인되지 않았다.
+
+2. 동적 안내 기준 D
+CRGTargetList::UpdateRGTiming 0x24d12e8..130a에서 대상 road/link/next
+link 값을 GetConvRoadType으로 분류한다. 0x24d1332..d4에서 사용자
+옵션과 dynamic timing 조건에 따라 road-class 테이블 +32의 값 또는
+조정값을 SetDynamicGuideDist(3, value)로 기록한다. 별도
+UpdateRGTimingConnect 경로도 있다. GetDynamicGuideDist 0x24cf3d4는
+저장값>100이며 dynamic timing type!=0인 경우 marginal distance를
+더한다. 관련 차량 상태 구조체 필드의 정확한 의미와 road-class 값표는
+아직 미확인이다. 임의 고정 거리나 차량 속도로 이름을 지으면 안 된다.
+
+3. 방향/도착/통과 처리
+SetClusterTBTInfo는 먼저 목적지/경유지, 그다음 guide=true이면 고속도로
+출구, 일반 회전, 휴게소, rotary, overpass, underpass, tunnel/toll case를
+순서대로 시도한다. 일반 회전 SetCaseTurnPoint는 내부 RG icon 조건으로
+type13/31/16/25 등을 택하고 p는 bar 계산에 사용한다. 이 분석 범위에서
+p만으로 PREPARE 34..38을 선택하는 코드는 발견하지 못했지만 다른 모든
+간접 코드가 해당 타입을 쓰지 않는다는 증거는 아니다. 인근 상수 36 중
+일부는 stItem+42의 방향 바이트이므로 display type 36과 혼동 금지.
+
+setClusterArrived(bool) 0x2627934의 플래그가 true이면 SetTurnData는
+내부 카운터가 0..4인 동안 type3을 세팅한다. API type3은 목적지 ARRIVED;
+중간 회전 통과 프레임으로 취급할 근거가 없다.
+IsPassedTurnPoint 0x2d80264는 CVehiclePosition의 route index/link
+position/length를 참조한다. IsExistTurnInVertex 0x2d802f4는 이것이
+참이면 해당 vertex의 회전 후보를 건너뛰고 다음 후보를 검사한다.
+이 호출자는 MakeNormalSideStreet 0x2d80400에 있다. 이는 순정 경로
+형상 처리의 후보 필터이며 커서 표시기나 CP 종료 이벤트로 동일시 불가.
+
+4. CluDataNew14 production 및 한계
+FrameCluster::InitSendData는 PE14 struct의 첫 세 u16을 65535, lane
+byte와 color nibble을 0으로 초기화한다. updateTurnData는
+SetPatternData를 호출한다. IsILSGuide는 ILS item+13==11 && item+16<=19999
+조건에서 item+16/+20/+24 일부를 꺼내 stItem+47/+49/+51에 전달한다.
++24가 -1이면 65535 초기값이 유지된다. ILS +368/+369가 조건을 만족하면
+데이터 배열 중 16..23을 lane 8비트로 변환하고 color 분기는 1..6 유지,
+10->7, 그 외 0으로 만든다. SetPatternData 0x26279ec은 이 숫자들을
+PE14 struct에 넣는다. type11 및 필드의 시각적 의미는 미확인이다.
+
+FrameCluster::sendPatternData 0x2629668은 세 u16/한 u8/하위4비트를
+ID10000..10004 순서로 vector에 넣어 setClusterSignals(4)에 전달.
+NaviDrivingAssistManager::sendClusterPattern_Android 0x1931a64는 이를
+5개의 int로 복원, 가상슬롯+0x170을 호출한다. CExSLVehicleSettingImpl
+vtable 0x44cfd80의 address-point+0x170은 RELATIVE addend 0x1b22e9d,
+즉 sendAdvancedTBTData 0x1b22e9c다. type0으로 0x17e4 callback을 보내고
+Java의 updateCluDataNew_14 경로로 이어진다. 원천 값표·기기 렌더러는
+없으므로 CP item10을 이 필드들에 임의 삽입하지 않는다.
+
+5. 검증 경계
+이 문서는 생산/인코딩 경로를 역추적한 정적 결과다. 재생성된 값이 실제
+계기판에 전송됐는지, renderer가 커서 위치를 어떤 신호로 계산하는지,
+CarPlay 이벤트의 state가 이 순정 progress와 어떻게 대응하는지는
+관찰하지 못했다. 실제 GPS/모의차량위치/차량 화면·설정은 변경하지 않았다.
+구체 주소별 명령어: 같은 폴더 ar-*.asm 및 ar-cinfo-symbols.txt 참조.
+
+6. 일반 교차로 side-street 각도 교차검토
+SetSideStreetBit 0x2d7ba2c에서 각 경로를 각도 구간별 비트로 모은다.
+정규화된 0..359° 입력 기준 0..11°와 349..359°는 bit0, 12..168°는
+22°/23° 교대 구간 bit1..7, 169..191° 구간은 일반 루프에서 건너뛰고,
+192..348°는 bit8..14다. 선택 경로의 방향 byte는 일반 루프에서
+(index+1)*3으로 저장되고, 별도로 관찰된 방향의 단위는 7.5°다.
+단, 0x2d7ba78..aa의 기준 각도 ±12° 및 내부 상태에 따른 bit7/8,
+방향 21/27 특례가 있어 단순 반올림으로 전체 함수가 재현되진 않는다.
+별도 ConvertTurnAngletoSideStreet 함수는 다른 분기와 구간을 사용한다.
+
+
+2026-11-07 exact NEEV native advanced junction producer analysis
+
+Scope: read-only analysis of the captured libExSLNavi.so and
+libExSLAndroidJNI.so. No changes to installation, vehicle, or released code.
+All addresses below are ELF virtual addresses (Thumb entry bit omitted).
+The tables describe native producer inputs and resource indices, not verified
+cluster pixels. A vehicle rendering result still requires observing the receiver.
+
+1. Complete advanced pattern transport chain
+
+CExSLVehicleSettingImpl::sendAdvancedTBTData(ecAdavancedTBTType,int*,int)
+0x1b22e9c accepts enum 0 with count >= 3, forwards the original array and count
+through native-to-Java callback vtable +0x1b4 with command 0x17e4.
+Enum 1 -> 0x17e5 requires count >= 6 (theme colors).
+Enum 2 -> 0x17e6 requires count >= 4 (distance/display target).
+Enum 3 -> 0x17e7 requires count >= 9.
+JNI marshaling and its ARM ABI are in REVIEW.txt; no geometry is synthesized there.
+
+The current five-value producer is:
+  FrameCluster::sendPatternData(CLU_PE_14_Data) 0x2629668
+  -> five _ClusterData entries IDs 10000..10004
+  -> CExternalNaviEngineManager::setClusterSignals(type 4, vector)
+  -> NaviDrivingAssistManager::sendClusterPattern_Android 0x1931a64
+  -> vehicle setting virtual +0x170, enum 0, intCount 5
+  -> sendAdvancedTBTData -> callback +0x1b4/command0x17e4.
+sendClusterPattern_Android compares the full five-int tuple against the last
+tuple and only emits on change. The tuple is:
+  [guidePatternIndex, arrowPatternIndex0, arrowPatternIndex1,
+   patternGuideLaneBits, patternGuideColorLowNibble].
+The first three are unsigned 16-bit fields; the lane field is 8 bits.
+
+FrameCluster::SetPatternData(Navi::CLUSTER::Turn::stItem*) 0x26279ec copies
+stItem+47/+49 as little-endian uint16 guide/arrow0 to object+96/+98.
+It only replaces arrow1 at object+100 when stItem uint16+51 is 1..65534.
+If stItem byte74 is nonzero, color is byte73 low4 and lane bits come from
+the eight uint16 entries starting+57, shifted by lane index and ORed.
+Do not interpret an omitted/zero arrow1 as a guaranteed explicit reset in
+this path; the function can retain its prior value.
+
+ClusterControllerAAOS::setPatternData(HClusterTurnInfo const&) 0x1e3f69c
+independently names the same data as getGuidePatternIndex,
+getArrowPatternIndex[0,1], getPatternGuideLane, getPatternGuideColor.
+Thus Java labels containing "direction" on CluDataNew14 do not make these
+values compass/turn angles. They are template resource indices.
+
+2. Native source of the pattern indices
+
+CRGILSList builds stRgRendering+24 = guide, +28/+32/+36/+40 = arrow indices.
+stRgRendering::Init 0x24c9f18 initializes all five words to -1.
+Navi::RG::ILS::CInformation::ParseItem 0x2468ab0 copies these five words to
+ILS stItem+16/+20/+24/+28/+32; rendering type+88 becomes ILS byte13.
+Navi::CLUSTER::Turn::CInformation::IsILSGuide 0x2d7d8c0 uses the pattern
+indices when ILS byte13 == 11, permits guide <=19999, and skips absent (-1)
+optional arrow indices. This is upstream of FrameCluster::SetPatternData.
+
+CRGILSList::GetPatternImage 0x29f520c selects the three-outgoing-branch
+producer for two other links and Y-branch producer for one other link.
+It excludes RG minor types 14 and 15 and ignores other links flagged at +73.
+This table is not a general arbitrary four-way urban intersection generator.
+
+Side enum verification:
+  eBranchSide 1 = left, 2 = straight, 3 = right.
+DetermineDirByRgCode 0x29f435c maps RGUGetDirByRgCode values -1/0/+1 to
+1/2/3 in the unambiguous straight/left/right combinations. DetermineDirByAngle
+0x29f4624 independently classifies angle 340..354 as KeepLeft and 6..20 as
+Keep_R, confirmed by literal logs at 0x3dd2d6d and 0x3dd2de3; its assignments
+map a left branch to side1 and right branch to side3.
+In these APIs, "main" is the selected route branch and "other" is the
+alternative branch, as also named in the function's diagnostic strings.
+
+CRGILSList::DetermineDifferLane 0x29f22ae returns true iff the straight
+branch has strictly more lanes than the other branch: mainSide2 tests
+mainLaneCount > otherLaneCount; otherSide2 tests mainLaneCount < otherLaneCount.
+The flag describes lane counts, not vehicle approach/pass state.
+
+Single split, GetSingleDivergeImageIdx 0x29f36a4:
+  selected  other     straight has more lanes   guide  arrow0
+  left      straight true                      1      2
+  left      straight false                    10     12
+  straight  left     true                      1      3
+  straight  left     false                    10     11
+  straight  right    true                      4      6
+  straight  right    false                     7      8
+  right     straight true                      4      5
+  right     straight false                     7      9
+  left      right    either                   23     24
+  right     left     either                   23     25
+Source writes: 0x29f36f8..0x29f37de; successful paths store+24/+28 only.
+
+Three outgoing branches, GetPatternThreeBranch 0x29f22d4:
+  guide19, arrow20 selected-left / arrow21 selected-straight /
+  arrow22 selected-right. The non-straight case requires one of the other
+  directions to be straight. Evidence 0x29f2390..0x29f23c4.
+
+Continuous split, GetContinuousDivergeImageIdx 0x29f38c4:
+The full successful control-flow choices are in
+continuous-pattern-choice-traces.json. trace_pattern_choices.py is a bounded
+interpreter over the objdump instruction text, not execution of the library.
+It handles only the observed decision instructions, preserves instruction
+addresses for every row, and never runs a native executable or vehicle call.
+Both side pairs are enumerated as main/other from {1,2,3}, excluding same-side
+pairs, with both lane flags. Some first left/right split cases deliberately
+reuse guide23 regardless of the second pair. Additional guide resources
+include 13,16,26,29,32,35,39,42, with route arrow indices in the adjoining range.
+Do not infer visual geometry only from these numerical resource IDs.
+
+3. The ILS progress field is an approach ratio
+
+CJunctionViewGuidance::GetRemainDistRatio 0x24c9dfc:
+  if !IsNeedRGDisplay(): return 0
+  lazily cache GetDynamicGuideDist(mode3) at object+912
+  if range == 0: return 0
+  remain = GetRemainDistance()
+  if remain == 0: return 100
+  if remain >= range: return 0
+  return 100 - min(100, uint8(floor(remain * 100 / range)))
+GetRemainDistRatioPoint 0x24c9e54 is the corresponding floating-point form.
+ParseItem stores GetRemainDistRatio into ILS item byte12; IsILSGuide's first
+output reads this byte. None of this function's branches derives a signed
+post-turn distance or extends a cursor beyond the maneuver. A value reaching
+100 establishes arrival progress here, not a verified through-turn animation.
+Evidence: RemainDistRatio.asm, ILSParseItem.asm, parent's ar-IsILSGuide.asm.
+
+4. MakePatternedSideStreet is a separate angle/bitmask path
+
+Navi::CLUSTER::Turn::CInformation::MakePatternedSideStreet 0x2d7f064 builds
+actual adjacent-link geometry from CEntityLink::Spawn, route link points,
+mCoordinate::GetAngle, ingress-link filtering, and FindMainLinks. It creates
+a 30-int angle array, initializes angle[0]=180 and count=2, then fills others.
+The final call at 0x2d7f450 uses vtable+0xac = SetSideStreetBit, verified from
+vtable symbol0x45122f0/addressPoint+8. Arguments are mode1, int*angles,
+unsigned count, unsigned char&out. Virtual+0xcc is FindMainLinks and+0xd0
+is the related main-route geometry helper. Ordinary sideStreet mapping is
+being analyzed separately by root. The function's word "Patterned" must
+not be confused with the fixed CLU_PE_14 guide/arrow resource tuple above.
+
+Practical implications:
+- A real native-compatible junction request needs matching guide/arrow IDs,
+  suitable main display mode, lane/color state, and appropriate lifecycle;
+  generic turn angle numbers cannot replace guide/arrow IDs.
+- The captured library supplies reproducible native fork templates; it does
+  not establish that CarPlay provides all alternative-road/lane geometry.
+- The five-value advanced tuple contains no independently verified cursor
+  position or pass flag. Its lane flag and color are not progress fields.
+- No product or USB changes were made by this analysis.

@@ -1,0 +1,25 @@
+{
+  "source_project": "https://github.com/seogaemo/hmg-seogaemo",
+  "source_commit": "7616e43f669916445f151a7aeb279b32ea09cd4b",
+  "source_release": "v0.1.47",
+  "license": "AGPL-3.0-or-later",
+  "source_recipe_sha256": "915b8ce0aec1ed136a455316a4a0c814da25f6013e8311edd4901a95cde25c47",
+  "packaged_recipe_id": "aa-tbt-48ee793a-neev-v0147",
+  "packaged_recipe_sha256": "88c41e236a839f6fda40287560c9420edc5861f2cda6a48d0eb5d43fac17d2ea",
+  "segment_sha256": "77bc34c9fde926eaeb9849fab5b23d7cbf616a9be1dc6b576c7b7d22938980d4",
+  "segment_bytes": 5574,
+  "stock_path": "/system/lib/libautoreceiver_infobank.so",
+  "stock_md5": "48ee793af8b86052503b8c952b034731",
+  "stock_sha256": "eff8c509b0534950b5e7eeac9e4505e3ab92eb5e4cace27371c254281baa2840",
+  "stock_bytes": 1837108,
+  "protocol": "event34 lane byte is a recommended-arrow slot bitmask; up to8 lanes x3 arrows; first NavigationState step only",
+  "local_changes": "Comments and unique ownership ID only; all executable recipe commands and segment bytes otherwise identical to pinned source",
+  "deployment_requirement": "Fresh GPM process; old ownership ID cannot authorize new decoder; stock hash and all verify regions must match before memory write",
+  "rebuild": {
+    "script": "mod/native/aa/build_recipe.py",
+    "base": "mod/native/aa/aa-tbt-48ee793a.base.recipe",
+    "base_sha256": "7d7ec2316f6a6956fd57b2d8dc6af362cce6f46edbfbc4136a3ba28008c574d5",
+    "requires": "Python3, Android NDK clang + llvm-objcopy (NDK_BIN or CLANG/OBJCOPY), --output path; no stock file needed to rebuild",
+    "verification_requires": "NEEV_AA_STOCK exact stock library; JDK17 viaJAVA_HOME orPATH; source/tests/test_aa_native_recipe.py"
+  }
+}

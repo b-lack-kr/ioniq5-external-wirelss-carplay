@@ -1,0 +1,17 @@
+{
+  "welcome.service": {
+    "class": "com.mobis.welcome.WelcomeService"
+  },
+  "welcome.service.animation_status": {
+    "method": "e",
+    "params": ["int"],
+    "ret": "void",
+    "static": false
+  },
+  "welcome.service.mode": {
+    "method": "getMode",
+    "params": [],
+    "ret": "int",
+    "static": true
+  }
+}

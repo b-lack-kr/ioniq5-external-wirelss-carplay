@@ -1,4 +1,4 @@
-"""Run the shipping coordinator with simulated NEMESIS/CarPlay endpoints on local storage."""
+"""Exercise the CarPlay-only USB flow; optional package state must not affect it."""
 import argparse
 import io
 import json
@@ -12,12 +12,9 @@ from zipfile import ZipFile
 import unittest
 
 build_usb = None
-legacy_mute = None
-legacy_unbranded = None
 app = 'hmgapi.neev-carplay-mute-pause'
 
-
-class JointInstaller(unittest.TestCase):
+class CarPlayInstaller(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(prefix='neev-joint-')
         self.addCleanup(tmp.cleanup)
@@ -27,7 +24,7 @@ class JointInstaller(unittest.TestCase):
         self.w=self.root/'base'
         self.mods=self.root/'mods'
         self.apps=self.root/'apps'
-        self.stage=self.w/'public-1.0.1'
+        self.stage=self.w/'public-release-1.0.2'
         for d in (self.bin,self.mods,self.apps,self.stage): d.mkdir(parents=True)
         with ZipFile(build_usb) as kit:
             kit.extractall(self.usb)
@@ -49,12 +46,18 @@ class JointInstaller(unittest.TestCase):
         text=text.replace('/system/xbin/nemesis',str(self.bin/'nemesis')).replace('/system/bin/app_process',str(self.bin/'verify')).replace('/system/bin/hmgapid',str(self.bin/'hmgapid'))
         text=text.replace('/proc/sys/kernel/random/boot_id',str(self.boot)).replace('/system/bin/sh "$USB/NEEV_CP_INSTALL.sh"',str(self.bin/'cp-upgrade')+' "$USB/NEEV_CP_INSTALL.sh"')
         script.write_text(text)
-        self.tool('am','exit 0')
+        self.tool('am','printf "%s\\n" "$*" > "$TEST_ROOT/notice"')
         self.tool('id',"echo 'uid=0(root)'")
         self.tool('sync','exit 0')
         self.tool('md5','if [ -x /sbin/md5 ]; then exec /sbin/md5 -r "$1"; else exec md5sum "$1"; fi')
         self.tool('getprop','echo NEEV.KOR.0000.V039.001.260902')
-        self.tool('hmgapid',"echo 'hmgapid 1.0.1'")
+        self.tool('hmgapid','''case "$1" in
+ version) [ ! -f "$TEST_ROOT/hmg-version-fail" ] || exit 2
+          if [ -f "$TEST_ROOT/hmg-version" ]; then cat "$TEST_ROOT/hmg-version"; else echo 'hmgapid 1.0.1'; fi;;
+ ping) echo ping >> "$TEST_ROOT/hmg-pings"
+       [ ! -f "$TEST_ROOT/hmg-ping-fail" ] || exit 3;;
+ *) exit 4;;
+esac''')
         # Model Signing.verify's strict file inventory as well as file digests.
         # Crypto verification itself is exercised by the independent real-engine suite.
         self.python_tool('verify', r"""import hashlib, json, os, sys
@@ -79,7 +82,9 @@ if command==['hmgapi.engine.Signing','verify']:
     except (OSError,ValueError,KeyError,AssertionError):
         sys.exit(3)
 elif command==['kr.ioniq5.usbcp.setup.Setup','history']:
-    assert os.environ['CLASSPATH']==os.environ['TEST_ROOT']+'/base/public-1.0.1/kit/payload/setup.jar'
+    assert os.environ['CLASSPATH']==os.environ['TEST_ROOT']+'/base/public-release-1.0.2/kit/payload/setup.jar'
+    with (Path(os.environ['TEST_ROOT'])/'history-calls').open('a') as f:f.write('history\n')
+    if os.environ.get('FAULT')=='history-kill':sys.exit(137)
     if os.environ.get('FAULT')=='history-fail':sys.exit(5)
     if os.environ.get('FAULT')=='history-partial':sys.exit(7)
     (Path(sys.argv[4])/'test-collector.txt').write_text('mock collector\n')
@@ -89,7 +94,7 @@ else:
         self.tool('cp-upgrade','''[ "$NEEV_CP_BUNDLE" = 1 ] || exit 9
 echo cp >> "$TEST_ROOT/calls.txt"
 base=$TEST_ROOT/base
-stage=$base/public-1.0.1
+stage=$base/public-release-1.0.2
 case "${FAULT:-}" in cp-fail) exit 7;; cp-false-success) exit 0;; esac
 previous=$(cat "$stage/STATUS" 2>/dev/null)
 if [ -e "$TEST_ROOT/stick/NEEV-CP-RESTORE" ] && [ -z "$previous" ]; then
@@ -113,8 +118,13 @@ if [ ! -d "$TEST_ROOT/mods/neev-usb-carplay" ]; then
   mkdir "$TEST_ROOT/mods/neev-usb-carplay/.features"
   echo generated > "$TEST_ROOT/mods/neev-usb-carplay/.features/generated.xml"
 fi
-echo 1.0.1 > "$base/UPGRADE_CURRENT.txt"
+echo 1.0.2 > "$base/UPGRADE_CURRENT.txt"
 echo INSTALLED > "$stage/STATUS"
+case "${FAULT:-}" in
+ cp-hmg-ping) touch "$TEST_ROOT/hmg-ping-fail";;
+ cp-hmg-version) echo 'hmgapid 1.0.0' > "$TEST_ROOT/hmg-version";;
+ cp-nemesis-missing) chmod -x "$TEST_ROOT/tools/nemesis";;
+esac
 ''')
         self.tool('nemesis','''id=hmgapi.neev-carplay-mute-pause
 case "$1" in
@@ -135,96 +145,6 @@ case "$1" in
 esac
 exit 1''')
 
-    def seed_existing_mute(self, archive=None, old_receipt=False):
-        env={**os.environ,'TEST_ROOT':str(self.root),'NEEV_CP_BUNDLE':'1'}
-        subprocess.run([str(self.bin/'cp-upgrade'),'unused'],env=env,check=True)
-        self.calls.write_text('')
-        if archive is None:
-            raw=(self.usb/'packages'/f'{app}.zip').read_bytes()
-        else:
-            with ZipFile(archive) as package:
-                raw=package.read('packages/'+app+'.zip')
-        with ZipFile(io.BytesIO(raw)) as wrapper:
-            wrapper.extractall(self.wrapper)
-            with ZipFile(io.BytesIO(wrapper.read('mod/package.zip'))) as mod:
-                mod.extractall(self.addon)
-        self.reg.touch()
-        if old_receipt:
-            (self.stage/'MUTE_1_0_0_DONE').write_text(app+' 1.0.0\n')
-        return (self.addon/'hooks.jar').read_bytes()
-
-    def require_legacy(self, unbranded=False):
-        path=legacy_unbranded if unbranded else legacy_mute
-        if path is None:self.skipTest('Provide --legacy-mute / --legacy-unbranded to exercise exact old wrappers')
-        return path
-
-    def test_published_100_with_old_receipt_upgrades_to_110(self):
-        old=self.seed_existing_mute(self.require_legacy(),old_receipt=True)
-        (self.addon/'.disabled').touch()
-        self.assertEqual(self.run_joint(),'COMPLETE_MUTE_ALREADY_DISABLED')
-        self.assertTrue((self.addon/'.disabled').exists())
-        self.assertNotEqual((self.addon/'hooks.jar').read_bytes(),old)
-        self.assertEqual(json.loads((self.addon/'mod.json').read_text())['version'],'1.1.0')
-        self.assertEqual(self.done.read_text().strip(),app+' 1.1.0')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','retry'])
-        self.assertEqual(self.run_joint(),'LOGS_EXPORTED')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','retry','cp'])
-
-    def test_unbranded_100_upgrades_to_110(self):
-        self.seed_existing_mute(self.require_legacy(True),old_receipt=True)
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        self.assertEqual(json.loads((self.addon/'mod.json').read_text())['version'],'1.1.0')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','retry'])
-
-    def test_existing_standalone_110_only_registers_completion(self):
-        before=self.seed_existing_mute()
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        self.assertEqual((self.addon/'hooks.jar').read_bytes(),before)
-        self.assertEqual(self.calls.read_text().splitlines(),['cp'])
-        self.assertEqual(self.done.read_text().strip(),app+' 1.1.0')
-
-    def test_old_upgrade_postinstall_retry(self):
-        old=self.seed_existing_mute(self.require_legacy(),old_receipt=True)
-        self.assertEqual(self.run_joint(False,'mute-postfail'),'CP_READY_MUTE_REPAIR_FAILED')
-        self.assertFalse(self.done.exists())
-        self.assertEqual((self.addon/'hooks.jar').read_bytes(),old)
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','retry','cp','retry'])
-
-    def test_old_upgrade_cannot_report_success_without_new_mod(self):
-        old=self.seed_existing_mute(self.require_legacy(),old_receipt=True)
-        self.assertEqual(self.run_joint(False,'mute-false-success'),'CP_READY_MUTE_UNVERIFIED')
-        self.assertFalse(self.done.exists())
-        self.assertEqual((self.addon/'hooks.jar').read_bytes(),old)
-        self.assertEqual(self.run_joint(),'COMPLETE')
-
-    def test_damaged_old_wrapper_is_preserved(self):
-        self.seed_existing_mute(self.require_legacy(),old_receipt=True)
-        target=self.wrapper/'scripts/postinstall.sh'
-        target.write_text('changed legacy code')
-        self.assertEqual(self.run_joint(False),'CP_READY_MUTE_OTHER_WRAPPER')
-        self.assertEqual(target.read_text(),'changed legacy code')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp'])
-
-    def test_damaged_old_signed_mod_is_preserved(self):
-        self.seed_existing_mute(self.require_legacy(),old_receipt=True)
-        target=self.addon/'hooks.jar'
-        target.write_bytes(b'changed legacy code')
-        self.assertEqual(self.run_joint(False),'CP_READY_MUTE_OTHER_VERSION')
-        self.assertEqual(target.read_bytes(),b'changed legacy code')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp'])
-
-    def test_restore_clears_new_receipt_but_leaves_mute_installed(self):
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        before=(self.addon/'hooks.jar').read_bytes()
-        (self.usb/'NEEV-CP-RESTORE').touch()
-        self.assertEqual(self.run_joint(),'CP_RESTORED_MUTE_UNCHANGED')
-        self.assertFalse(self.done.exists())
-        self.assertEqual((self.addon/'hooks.jar').read_bytes(),before)
-        (self.usb/'NEEV-CP-RESTORE').unlink()
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','fresh','cp','cp'])
-
     def tool(self,name,body):
         path=self.bin/name
         path.write_text('#!/bin/sh\n'+body+'\n')
@@ -242,167 +162,132 @@ exit 1''')
             path=self.usb/'NEEV_CP'/relative
             path.write_bytes(b'Finder synthetic metadata')
 
-    def test_appledouble_usb_files_do_not_enter_local_signed_kit(self):
-        self.add_usb_metadata()
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        for root in (self.stage/'kit',self.cp):
-            self.assertFalse(any(p.name.startswith('._') or p.name=='.DS_Store' for p in root.rglob('*')))
-        self.assertTrue((self.usb/'NEEV_CP/payload/mod/._LICENSE').exists())
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','fresh'])
-
-    def test_appledouble_added_before_retry_does_not_block_completion(self):
-        self.assertEqual(self.run_joint(False,'mute-postfail'),'CP_READY_MUTE_INSTALL_FAILED')
-        self.add_usb_metadata()
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','fresh','cp','retry'])
-        self.assertEqual(self.run_joint(),'LOGS_EXPORTED')
-
-    def test_retry_after_old_coordinator_metadata_failure(self):
-        self.add_usb_metadata()
-        script=self.usb/'NEMESIS.sh'
-        fixed=script.read_text()
-        self.assertEqual(fixed.count('cp_kit="$PUBLIC/kit"'),1)
-        # Reproduce the exact failed customer state: CP already installed, but
-        # coordinator stops before mute installation while verifying raw USB.
-        script.write_text(fixed.replace('cp_kit="$PUBLIC/kit"','cp_kit="$USB/NEEV_CP"'))
-        self.assertEqual(self.run_joint(False),'CP_STATE_UNVERIFIED')
-        self.assertEqual(self.state.read_text().strip(),'INSTALLED')
-        self.assertTrue(self.cp.is_dir())
-        self.assertFalse(self.addon.exists() or self.done.exists())
-        installed=(self.cp/'hooks.jar').read_bytes()
-        local_manifest=(self.stage/'kit/MANIFEST.md5').read_bytes()
-        script.write_text(fixed)
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        self.assertEqual((self.cp/'hooks.jar').read_bytes(),installed)
-        self.assertEqual((self.stage/'kit/MANIFEST.md5').read_bytes(),local_manifest)
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','cp','fresh'])
-
-    def test_unsigned_file_in_local_staging_is_not_ignored(self):
-        self.assertEqual(self.run_joint(False,'mute-postfail'),'CP_READY_MUTE_INSTALL_FAILED')
-        (self.stage/'kit/payload/mod/._LICENSE').write_bytes(b'Unexpected internal file')
-        self.assertEqual(self.run_joint(False),'CP_STATE_UNVERIFIED')
-        self.assertFalse(self.addon.exists())
-
-    def test_changed_signed_local_staging_content_is_rejected(self):
-        self.assertEqual(self.run_joint(False,'mute-postfail'),'CP_READY_MUTE_INSTALL_FAILED')
-        (self.stage/'kit/payload/mod/hooks.jar').write_bytes(b'Changed signed code')
-        self.assertEqual(self.run_joint(False),'CP_STATE_UNVERIFIED')
-        self.assertFalse(self.addon.exists())
-
-    def run_joint(self,success=True,fault=''):
+    def run_cp(self,success=True,fault='',args=('--install',)):
         before=set(self.usb.glob('NEEV_BUNDLE_RESULT_*'))
-        result=subprocess.run(['/bin/sh',str(self.usb/'NEMESIS.sh')],capture_output=True,env={**os.environ,'TEST_ROOT':str(self.root),'FAULT':fault})
+        result=subprocess.run(['/bin/sh',str(self.usb/'NEMESIS.sh'),*args],capture_output=True,
+                              env={**os.environ,'TEST_ROOT':str(self.root),'FAULT':fault})
         new, = set(self.usb.glob('NEEV_BUNDLE_RESULT_*'))-before
-        log=(new/'INSTALL.log').read_text()
-        self.assertEqual(result.returncode==0,success,log)
+        self.assertEqual(result.returncode==0,success,(new/'INSTALL.log').read_text())
         self.result_dir=new
         return (new/'STATUS.txt').read_text().strip()
 
-    def test_history_failure_preserves_install(self):
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        self.assertEqual(self.run_joint(False,'history-fail'),'HISTORY_EXPORT_FAILED')
-        self.assertTrue(self.done.exists() and self.reg.exists() and self.addon.is_dir())
-        self.assertEqual(self.run_joint(),'LOGS_EXPORTED')
-        self.assertEqual((self.result_dir/'test-collector.txt').read_text().strip(),'mock collector')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','fresh','cp','cp'])
-
-    def test_history_rejects_corrupt_helper(self):
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        (self.stage/'kit/payload/setup.jar').write_bytes(b'fixture tampered')
-        self.assertEqual(self.run_joint(False),'HISTORY_HELPER_INVALID')
-        self.assertFalse((self.result_dir/'test-collector.txt').exists())
-        self.assertTrue(self.done.exists() and self.reg.exists() and self.addon.is_dir())
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','fresh','cp'])
-
-    def test_history_allows_partial_capture(self):
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        self.assertEqual(self.run_joint(fault='history-partial'),'LOGS_EXPORTED_PARTIAL')
-        self.assertTrue(self.done.exists() and self.reg.exists() and self.addon.is_dir())
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','fresh','cp'])
-
-    def test_install_then_log_only(self):
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        self.assertTrue(self.done.is_file())
-        self.assertTrue(self.wrapper.is_dir() and self.addon.is_dir())
-        self.assertEqual(self.run_joint(),'LOGS_EXPORTED')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','fresh','cp'])
-
-    def test_respects_disabled_and_deliberate_removal(self):
-        self.run_joint()
-        self.done.unlink()
-        (self.addon/'.disabled').touch()
-        self.assertEqual(self.run_joint(),'COMPLETE_MUTE_ALREADY_DISABLED')
-        self.assertTrue((self.addon/'.disabled').exists())
-        self.reg.unlink();shutil.rmtree(self.wrapper);shutil.rmtree(self.addon)
-        self.assertEqual(self.run_joint(),'LOGS_EXPORTED')
-        self.assertFalse(self.addon.exists())
-        self.assertEqual(self.calls.read_text().count('fresh'),1)
-
-    def test_registered_partial_repairs_before_completion(self):
-        self.assertEqual(self.run_joint(False,'mute-postfail'),'CP_READY_MUTE_INSTALL_FAILED')
-        self.assertFalse(self.done.exists())
-        self.assertEqual(self.version.read_text().strip(),'1.0.1')
-        self.assertEqual(self.run_joint(),'COMPLETE')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','fresh','cp','retry'])
-
-    def test_hmg_missing_after_reported_success(self):
-        self.assertEqual(self.run_joint(False,'mute-false-success'),'CP_READY_MUTE_UNVERIFIED')
-        self.assertFalse(self.done.exists())
-
-    def test_bad_source_and_wrong_cp_do_not_install_mute(self):
-        self.assertEqual(self.run_joint(False,'cp-fail'),'CP_FAILED')
-        self.assertEqual(self.run_joint(False,'cp-false-success'),'CP_STATE_UNVERIFIED')
-        (self.usb/'packages'/f'{app}.zip').write_bytes(b'x')
-        self.assertEqual(self.run_joint(False),'BAD_MUTE_INSTALLER')
-        self.assertEqual(self.calls.read_text().splitlines(),['cp','cp'])
-
-    def test_foreign_mute_or_wrapper_is_preserved(self):
-        self.wrapper.mkdir()
-        (self.wrapper/'NEMESIS.data').write_text('other')
+    def foreign_mute(self):
+        self.addon.mkdir(); (self.addon/'hooks.jar').write_bytes(b'unrelated signed version')
+        self.wrapper.mkdir(); (self.wrapper/'NEMESIS.data').write_text('another wrapper')
+        (self.wrapper/'scripts').mkdir(); (self.wrapper/'scripts/common.sh').write_text('different wrapper revision')
         self.reg.touch()
-        self.assertEqual(self.run_joint(False),'CP_READY_MUTE_OTHER_WRAPPER')
-        self.assertEqual((self.wrapper/'NEMESIS.data').read_text(),'other')
-        self.addon.mkdir()
-        self.assertEqual(self.run_joint(False),'CP_READY_MUTE_OTHER_VERSION')
+
+    def test_carplay_installs_without_mute_archive_or_registration(self):
+        self.assertFalse((self.usb/'packages'/f'{app}.zip').exists())
+        self.assertEqual(self.run_cp(),'COMPLETE')
+        self.assertEqual(self.calls.read_text().splitlines(),['cp'])
+        self.assertFalse(self.addon.exists() or self.wrapper.exists() or self.done.exists())
+
+    def test_real_incident_other_mute_wrapper_cannot_fail_carplay(self):
+        self.foreign_mute()
+        self.assertEqual(self.run_cp(),'COMPLETE')
+        self.assertEqual(self.run_cp(args=('--collect',)),'LOGS_EXPORTED')
+        self.assertEqual((self.wrapper/'scripts/common.sh').read_text(),'different wrapper revision')
+        self.assertEqual((self.addon/'hooks.jar').read_bytes(),b'unrelated signed version')
         self.assertEqual(self.calls.read_text().splitlines(),['cp','cp'])
 
-    def test_restore_and_interrupted_cp_never_install_mute(self):
-        self.state.write_text('INSTALLING')
-        self.assertEqual(self.run_joint(),'CP_RESTORED_MUTE_UNCHANGED')
-        self.run_joint()
-        (self.usb/'NEEV-CP-RESTORE').touch()
-        self.assertEqual(self.run_joint(),'CP_RESTORED_MUTE_UNCHANGED')
-        self.assertTrue(self.addon.is_dir() and self.reg.exists())
-        self.assertEqual(self.version.read_text().strip(),'0.1.10')
-
-    def test_stale_restore_marker_does_not_install(self):
-        (self.usb/'NEEV-CP-RESTORE').touch()
-        self.assertEqual(self.run_joint(False),'CP_FAILED')
+    def test_broken_optional_zip_is_ignored(self):
+        (self.usb/'packages'/f'{app}.zip').write_bytes(b'damaged optional package')
+        self.assertEqual(self.run_cp(),'COMPLETE')
         self.assertEqual(self.calls.read_text().splitlines(),['cp'])
-        self.assertFalse(self.reg.exists())
 
-    def test_reboot_after_hard_stop(self):
-        lock=self.stage/'.joint-mute-ab12-1234.lock'
-        lock.mkdir()
-        self.assertEqual(self.run_joint(False),'CP_READY_MUTE_BUSY')
-        self.assertFalse(self.reg.exists())
-        self.boot.write_text('feed-face')
-        self.assertEqual(self.run_joint(),'COMPLETE')
+    def test_old_mute_receipt_is_not_read_or_modified(self):
+        target=self.root/'other-receipt';target.write_text('unknown receipt')
+        self.done.symlink_to(target)
+        self.assertEqual(self.run_cp(),'COMPLETE')
+        self.assertEqual(self.run_cp(args=('--collect',)),'LOGS_EXPORTED')
+        self.assertTrue(self.done.is_symlink());self.assertEqual(target.read_text(),'unknown receipt')
 
-    def test_damaged_live_cp_never_advances_mute(self):
-        self.assertEqual(self.run_joint(False,'mute-postfail'),'CP_READY_MUTE_INSTALL_FAILED')
-        (self.cp/'hooks.jar').write_bytes(b'tampered')
-        self.assertEqual(self.run_joint(False),'CP_STATE_UNVERIFIED')
-        self.assertFalse(self.addon.exists())
+    def test_disabled_optional_mod_is_preserved(self):
+        self.foreign_mute();(self.addon/'.disabled').touch()
+        self.assertEqual(self.run_cp(),'COMPLETE')
+        self.assertTrue((self.addon/'.disabled').is_file())
 
+    def test_restore_does_not_install_remove_or_check_mute(self):
+        self.foreign_mute();self.run_cp();(self.usb/'NEEV-CP-RESTORE').touch()
+        self.assertEqual(self.run_cp(),'CP_RESTORED')
+        self.assertEqual((self.wrapper/'NEMESIS.data').read_text(),'another wrapper')
+        self.assertEqual((self.addon/'hooks.jar').read_bytes(),b'unrelated signed version')
+        self.assertEqual(self.calls.read_text().splitlines(),['cp','cp'])
+
+    def test_failed_carplay_reports_only_carplay_failure(self):
+        self.foreign_mute()
+        self.assertEqual(self.run_cp(False,'cp-fail'),'CP_FAILED')
+        self.assertFalse(self.cp.exists());self.assertTrue(self.addon.exists())
+
+    def test_false_success_still_requires_own_installed_state(self):
+        self.assertEqual(self.run_cp(False,'cp-false-success'),'CP_STATE_UNVERIFIED')
+
+    def test_tampered_carplay_launcher_is_not_executed(self):
+        (self.usb/'NEEV_CP_INSTALL.sh').write_text('changed')
+        self.assertEqual(self.run_cp(False),'BAD_CP_INSTALLER')
+        self.assertFalse(self.calls.exists())
+
+    def test_local_signed_mod_tamper_is_rejected(self):
+        self.run_cp();(self.stage/'kit/payload/mod/hooks.jar').write_bytes(b'changed')
+        self.assertEqual(self.run_cp(False),'CP_STATE_UNVERIFIED')
+
+    def test_live_carplay_tamper_is_rejected(self):
+        self.run_cp();(self.cp/'hooks.jar').write_bytes(b'changed')
+        self.assertEqual(self.run_cp(False),'CP_STATE_UNVERIFIED')
+
+    def test_history_uses_own_installed_state_without_mute_receipt(self):
+        self.run_cp();self.assertFalse(self.done.exists())
+        self.assertEqual(self.run_cp(args=('--collect',)),'LOGS_EXPORTED')
+        self.assertEqual((self.result_dir/'test-collector.txt').read_text(),'mock collector\n'.replace('\\n','\n'))
+
+    def test_history_error_preserves_install(self):
+        self.run_cp();self.assertEqual(self.run_cp(False,'history-fail',args=('--collect',)),'HISTORY_EXPORT_FAILED')
+        self.assertEqual(self.state.read_text().strip(),'INSTALLED')
+
+    def test_history_partial_result_is_reported(self):
+        self.run_cp();self.assertEqual(self.run_cp(True,'history-partial',args=('--collect',)),'LOGS_EXPORTED_PARTIAL')
+
+    def test_history_rejects_changed_helper(self):
+        self.run_cp();(self.stage/'kit/payload/setup.jar').write_bytes(b'changed')
+        self.assertEqual(self.run_cp(False,args=('--collect',)),'HISTORY_HELPER_INVALID')
+
+    def test_usb_finder_metadata_stays_outside_signed_staging(self):
+        self.add_usb_metadata();self.assertEqual(self.run_cp(),'COMPLETE')
+        self.assertFalse((self.stage/'kit/payload/mod/._LICENSE').exists())
+        self.assertTrue((self.usb/'NEEV_CP/payload/mod/._LICENSE').exists())
+
+    def test_reinstall_succeeds_without_calling_killed_collector(self):
+        self.run_cp()
+        self.assertEqual(self.run_cp(True,'history-kill'),'COMPLETE')
+        self.assertFalse((self.root/'history-calls').exists())
+        self.assertEqual(self.state.read_text().strip(),'INSTALLED')
+
+    def test_explicit_killed_collection_reports_failure_without_changing_install(self):
+        self.run_cp()
+        self.assertEqual(self.run_cp(False,'history-kill',args=('--collect',)),'HISTORY_EXPORT_FAILED')
+        self.assertEqual((self.root/'history-calls').read_text(),'history\n')
+        self.assertEqual(self.state.read_text().strip(),'INSTALLED')
+
+    def test_unknown_or_extra_mode_is_rejected_before_installation(self):
+        for args in (('--typo',),('--install','--collect')):
+            with self.subTest(args=args):
+                self.assertEqual(self.run_cp(False,args=args),'INVALID_ACTION')
+                self.assertFalse(self.calls.exists())
+
+    def test_collection_does_not_install_a_missing_carplay(self):
+        for args in ((),('--collect',)):
+            with self.subTest(args=args):
+                self.assertEqual(self.run_cp(False,args=args),'CP_NOT_INSTALLED')
+                self.assertFalse(self.calls.exists() or self.cp.exists())
+
+    def test_default_execute_mode_collects_existing_install_only(self):
+        self.run_cp()
+        self.assertEqual(self.run_cp(args=()),'LOGS_EXPORTED')
+        self.assertEqual((self.root/'history-calls').read_text(),'history\n')
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('archive',type=Path,help='Built, trusted USB release archive')
-    parser.add_argument('--legacy-mute',type=Path,help='Original published Mute Pause1.0.0 USB ZIP')
-    parser.add_argument('--legacy-unbranded',type=Path,help='Original pre-branding Mute Pause1.0.0 USB ZIP')
-    a=parser.parse_args()
-    build_usb=a.archive.resolve()
-    legacy_mute=a.legacy_mute
-    legacy_unbranded=a.legacy_unbranded
+    parser.add_argument('archive',type=Path,help='Built standalone CarPlay USB release')
+    args=parser.parse_args();build_usb=args.archive
     unittest.main(argv=[sys.argv[0]],verbosity=2)

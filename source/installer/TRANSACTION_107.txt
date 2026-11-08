@@ -1,0 +1,17 @@
+CarPlay 1.0.7 transaction migration
+New transaction: /data/nemesis/neev-usbcp/public-1.0.7
+Direct 1.0.5 -> 1.0.7 is supported; 1.0.6 installation is not required.
+All existing authenticated historical sources remain accepted.
+
+Additional exact 1.0.6 input:
+Core SHA256: 626fedc17492d1aa9d489b647842d7d615d6497a73144a8af566eee49d0940aa
+Kit MANIFEST MD5: 2c6692b98c3dc8aaa04a29e8936b1c34
+Signed mod manifest MD5: 996a307153f0a2bdfc5379235d386e7e
+Owner: bd5f651c-38f9-8ef4-827c-34ad706c2b5c
+
+Complete pinned old kits and their signed payloads are verified but not executed.
+The exact source is retained for failed-install rollback and explicit restore.
+Uninstall/fresh handling parks only authenticated completed old records.
+Same healthy 1.0.7 automatic USB insertion collects logs without reinstall.
+Damaged, incomplete, unknown or newer states stop; no automatic downgrade.
+HMG-API minimum 1.0.1 is separate from CarPlay version pins.

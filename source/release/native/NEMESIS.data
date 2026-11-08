@@ -1,0 +1,19 @@
+[nemesis]
+version=1.1
+id=hmgapi.neev-usb-carplay
+name=IONIQ 5 USB CarPlay
+type=application
+package-version=1.0.2
+short-desc="by blackr. USB Wi-Fi 동글용 무선 CarPlay"
+detailed-desc="by blackr. NEEV KOR 260902용 CarPlay 설치 도구입니다. 설치 파일 전체가 담긴 USB가 필요하며 설치 후 내비를 재부팅하세요."
+os="NEEV.KOR.*.260902"
+models="any"
+depends="hmgapi@>=1.0.1"
+preinstall=scripts/preinstall.sh
+postinstall=scripts/postinstall.sh
+preuninstall=scripts/preuninstall.sh
+
+[app.0]
+kind=sh
+path=bin/open.sh
+uid=root

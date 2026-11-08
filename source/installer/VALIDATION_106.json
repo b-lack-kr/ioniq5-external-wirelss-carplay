@@ -1,0 +1,92 @@
+{
+  "release": "1.0.6",
+  "previous_version": "1.0.5",
+  "validation_kind": "host modeled Android/NEMESIS; not vehicle validated",
+  "results": {
+    "historical_105_upgrade": {
+      "tests": 13,
+      "status": "PASS",
+      "log": "validation/installer-106.log",
+      "covers": [
+        "real 1.0.5 archive and complete pinned kit/mod pair",
+        "in-place update, rerun, rollback",
+        "manual uninstall to fresh install",
+        "rollback then uninstall to fresh install",
+        "failure and interrupted install recovery",
+        "tamper and incomplete-state rejection",
+        "missing-map repair",
+        "preserved configuration and independent mute package"
+      ]
+    },
+    "usb_auto": {
+      "tests": 25,
+      "status": "PASS",
+      "log": "validation/usb-auto.log",
+      "covers": [
+        "known older versions through 1.0.5 update",
+        "1.0.6 collect-only",
+        "removed 1.0.4/1.0.5/1.0.6 without printf",
+        "strict single-line state validation",
+        "no force install or downgrade"
+      ]
+    },
+    "native_package": {
+      "tests": 15,
+      "status": "PASS",
+      "log": "validation/native-package.log"
+    },
+    "ap_regression": {
+      "tests": 33,
+      "status": "PASS",
+      "log": "validation/ap-regression.log"
+    },
+    "older_installer_regressions": {
+      "tests": 85,
+      "status": "PASS",
+      "log": "validation/installer-historical.log",
+      "modules": {
+        "test_installer.py": 38,
+        "test_missing_map.py": 9,
+        "test_upgrade_102.py": 12,
+        "test_upgrade_104.py": 12,
+        "test_upgrade_105.py": 14
+      }
+    }
+  },
+  "previous_release_pin": {
+    "archive": "NEEV_260902_CarPlay_1.0.5_USB.zip",
+    "sha256": "43f99958024d6bf5b1c949946fb4ac8bb6b120bd6ffc4a669c5c50f28b20a2ab",
+    "kit_manifest_md5": "9d0e922345184343d7c5c453200b8193",
+    "signed_mod_manifest_md5": "ed448f1ff1b2271cb94faca84d9c9b83"
+  },
+  "artifact_joint_test": {
+    "status": "PASS",
+    "tests": 21,
+    "log": "validation/joint-tests.log",
+    "archive_sha256": "626fedc17492d1aa9d489b647842d7d615d6497a73144a8af566eee49d0940aa"
+  },
+  "unchanged_identity": {
+    "mod": "neev-usb-carplay",
+    "nemesis": "hmgapi.neev-usb-carplay",
+    "uuid": "bd5f651c-38f9-8ef4-827c-34ad706c2b5c",
+    "hmg_minimum": "1.0.1"
+  },
+  "restore_marker": "zero-byte; manual collector entry only",
+  "scope": "screen recovery, AR turn-distance guard and diagnostics; no claim of complete AR/GPS/tunnel/USB power fixes",
+  "status": "PASS: 98 installer + 25 USB dispatcher + 15 native package + 33 AP = 171 host tests. Final artifact integration is separate.",
+  "shipping_input_sha256": {
+    "installer/templates/NEMESIS.sh": "7e9345fa210ab695fcd7ad2e2ef182ea1006926b09ca26db38cee374bed12755",
+    "installer/templates/operate.sh": "7f912aa6660cf8ca0383c181f6c9f963f426d258e38382c01e660c3cb56bff3e",
+    "installer/build_installer.py": "2d7b1ff38839db21f269b8c05211672c00978ee3e43215ddeac78531cb6f49e6",
+    "release/USB_AUTO.sh": "0294b7ba9d3fcdb39a4d332e0a32c7dfff3d0adbafd1942eede53bed9ccf3c54",
+    "release/NEMESIS.sh": "680856785da765af1730f8cd81310afe910b55c025d01efd31a1a53510773856",
+    "release/native/NEMESIS.data": "b475d99576b015f457b37fad631852868e94edb0bf23e7e61aaf79f9c24a7aed",
+    "release/build.py": "5fcf166918a8a5f81fb83b384d675d394bba125888dd1b2cc9f0de07f9aa5ba7"
+  },
+  "fixture_override_check": {
+    "status": "PASS",
+    "tests": 1,
+    "log": "validation/installer-104-fixture-override.log",
+    "note": "Targeted rerun after adding NEEV_PUBLIC_104_INITIAL_USB override; part of the existing 85 historical cases, not an additional distinct test."
+  }
+}

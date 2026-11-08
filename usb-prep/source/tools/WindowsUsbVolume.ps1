@@ -1,4 +1,4 @@
-﻿# This file is loaded by Prepare-USB.ps1 after the 31 release inputs have been verified.
+﻿# This file is loaded by Prepare-USB.ps1 after all release inputs have been verified.
 function Get-SafeUsbVolumes([uint32[]]$protectedDisks) {
     $disks = @(Get-Disk -ErrorAction Stop)
     foreach ($disk in $disks) {
@@ -160,12 +160,13 @@ function Assert-DeviceFile([string]$file, [string]$digest) {
     } finally { $inputFile.Dispose() }
 }
 
-function Assert-UsbPayloadTree([string]$root, [switch]$WithoutDescriptor) {
+function Assert-UsbPayloadTree([string]$root, [switch]$WithoutDescriptor, [switch]$WithoutAutostart) {
     $plan = Get-UsbContentPlan $root
     $prefix = ([IO.DirectoryInfo]::new($root)).FullName.TrimEnd([char[]]@('\','/')) + [IO.Path]::DirectorySeparatorChar
     foreach ($file in $plan.Files) {
         $relative = $file.FullName.Substring($prefix.Length).Replace('\','/')
-        if (!$expected.ContainsKey($relative) -or ($WithoutDescriptor -and $relative -ceq 'NEMESIS.data')) {
+        if (!$expected.ContainsKey($relative) -or ($WithoutDescriptor -and $relative -ceq 'NEMESIS.data') -or
+            ($WithoutAutostart -and $relative -ceq 'USB_AUTO.sh')) {
             throw "USB에 예상하지 않은 파일이 있습니다: $relative"
         }
         Assert-DeviceFile $file.FullName $expected[$relative]
@@ -176,6 +177,7 @@ function Assert-UsbPayloadTree([string]$root, [switch]$WithoutDescriptor) {
     }
     $count = $expected.Count
     if ($WithoutDescriptor) { $count-- }
+    if ($WithoutAutostart -and $expected.ContainsKey('USB_AUTO.sh')) { $count-- }
     if ($plan.Files.Count -ne $count) { throw 'USB 설치 파일 일부가 빠졌습니다.' }
 }
 
@@ -235,12 +237,24 @@ function Write-SelectedVolume($selected, [uint32[]]$protectedDisks) {
     Remove-UsbContents $current $protectedDisks
     $null = Confirm-UsbIdentity $current $protectedDisks
     foreach ($name in $expected.Keys) {
-        if ($name -ceq 'NEMESIS.data') { continue }
+        if ($name -ceq 'NEMESIS.data' -or $name -ceq 'USB_AUTO.sh') { continue }
         $dest = [IO.Path]::Combine($root,$name.Replace([char]'/',[IO.Path]::DirectorySeparatorChar))
         Assert-PlainUsbPath $root $dest -AllowMissing
         New-UsbPayloadParent $root $name
         [IO.File]::Copy([IO.Path]::Combine($ready,$name),$dest,$false)
         Assert-DeviceFile $dest $expected[$name]
+    }
+    Assert-UsbPayloadTree $root -WithoutDescriptor -WithoutAutostart
+    $null = Confirm-UsbIdentity $current $protectedDisks
+    if ($expected.ContainsKey('USB_AUTO.sh')) {
+        $auto = [IO.Path]::Combine($root,'USB_AUTO.sh')
+        $tempAuto = [IO.Path]::Combine($root,'.neev-autostart.pending')
+        Assert-PlainUsbPath $root $tempAuto -AllowMissing
+        [IO.File]::Copy([IO.Path]::Combine($ready,'USB_AUTO.sh'),$tempAuto,$false)
+        Assert-DeviceFile $tempAuto $expected['USB_AUTO.sh']
+        $null = Confirm-UsbIdentity $current $protectedDisks
+        [IO.File]::Move($tempAuto,$auto)
+        Assert-DeviceFile $auto $expected['USB_AUTO.sh']
     }
     Assert-UsbPayloadTree $root -WithoutDescriptor
     $null = Confirm-UsbIdentity $current $protectedDisks
@@ -254,7 +268,7 @@ function Write-SelectedVolume($selected, [uint32[]]$protectedDisks) {
     [IO.File]::Move($tempDescriptor,$descriptor)
     Assert-DeviceFile $descriptor $expected['NEMESIS.data']
     Assert-UsbPayloadTree $root
-    Write-Host "USB 준비 완료: $($selected.Letter): ($($current.FileSystem)), 설치 파일 31개 확인. 파티션과 파일 시스템은 유지했습니다. Windows에서 안전하게 제거하세요."
+    Write-Host "USB 준비 완료: $($selected.Letter): ($($current.FileSystem)), 설치 파일 $($expected.Count)개 확인. 파티션과 파일 시스템은 유지했습니다. Windows에서 안전하게 제거하세요."
 }
 
 function Start-UsbFileRefresh {

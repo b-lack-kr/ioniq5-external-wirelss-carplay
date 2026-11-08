@@ -10,8 +10,8 @@ import zipfile
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_UUID = 'bd5f651c-38f9-8ef4-827c-34ad706c2b5c'
-TARGET_PIN = '1e1a098597edb3a6cb3ec35900975dcc8bc73d9f7fbd657f1f74448021b4896b'
-MAP_NAMES = ('car.json', 'framework.json', 'dipo.json', 'iap2.json')
+TARGET_PIN = '6026cfd445c4357de3c7162771c40e652609b9c3d85849c8146e72f346a83346'
+MAP_NAMES = ('car.json', 'framework.json', 'dipo.json', 'iap2.json', 'btsettings.json', 'phoneprojection.json', 'gpm.json', 'welcome.json')
 
 
 def md5(p):
@@ -23,7 +23,7 @@ def build_payload(mod, setup_jar, maps, target, vendor_dir, out, uuid=DEFAULT_UU
     meta = json.loads((mod/'mod.json').read_text())
     assert re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', uuid)
     assert signed['uuid'] == uuid and meta['id'] == signed['id'] == 'neev-usb-carplay'
-    assert meta['version'] == signed['version'] == '1.0.1'
+    assert meta['version'] == signed['version'] == '1.0.2'
     assert set(signed['files']) == {f.relative_to(mod).as_posix() for f in mod.rglob('*')
                                     if f.is_file() and 'META-HMGAPI' not in f.parts}
     assert all(not f.is_symlink() for f in mod.rglob('*'))

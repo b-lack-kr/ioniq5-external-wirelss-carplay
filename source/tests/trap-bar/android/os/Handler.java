@@ -1,0 +1,1 @@
+package android.os; public class Handler { public static Runnable task; public Handler(Looper l){} public void removeCallbacks(Runnable r){if(task==r)task=null;} public boolean postDelayed(Runnable r,long d){task=r;return true;} }

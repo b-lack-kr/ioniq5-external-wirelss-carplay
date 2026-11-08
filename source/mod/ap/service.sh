@@ -21,7 +21,7 @@ ACTIVE_IFINDEX=
 ADDED_ROUTES=
 ADDED_ADDRESS=0
 # This goes to hmgapid's service log even if the private AP directory is unavailable.
-echo 'AP_STARTUP version=1.0.1 phase=ENTRY'
+echo 'AP_STARTUP version=1.0.2 phase=ENTRY'
 startup_fail() { echo "AP_STARTUP_FAILURE reason=$1"; exit 3; }
 [ -f "$APP_DIR/runtime.sh" ] && [ ! -L "$APP_DIR/runtime.sh" ] || startup_fail RUNTIME_MISSING
 . "$APP_DIR/runtime.sh" || startup_fail RUNTIME_SOURCE
@@ -35,7 +35,7 @@ prepare_paths() {
     chown 0:0 "$TMP_DIR" && chmod 751 "$TMP_DIR" || return 1
     # Inspect files this service writes, not unrelated leftovers in the directory.
     # A previous debug kit may legitimately have left a link of its own here.
-    for item in daemon_stdout.log service-state.txt daemon.pid insmod.log hostapd_usb hostapd_usb.new hostapd.log dnsmasq.log hostapd.pid dnsmasq.pid hostapd.exit dnsmasq.exit; do
+    for item in daemon_stdout.log service-state.txt daemon.pid insmod.log hostapd_usb hostapd_usb.new hostapd.log dnsmasq.log hostapd.pid dnsmasq.pid hostapd.exit dnsmasq.exit power-state power-state.new power-event power-event.new; do
         [ ! -L "$TMP_DIR/$item" ] || return 1
         [ ! -e "$TMP_DIR/$item" ] || [ -f "$TMP_DIR/$item" ] || return 1
     done
@@ -237,7 +237,13 @@ stop_radio() {
             if [ "$ADDED_ADDRESS" = 1 ]; then
                 ip addr del "$GW/24" dev "$ACTIVE_IFACE" >/dev/null 2>&1
             fi
+            # This is only our verified netdev. It ends Wi-Fi activity, not USB
+            # 5 V supply; never suspend the shared USB controller or native wlan0.
+            ip link set "$ACTIVE_IFACE" down >/dev/null 2>&1 ||
+                echo "AP_LINK_DOWN_FAILED iface=$ACTIVE_IFACE"
         fi
+        # Read-only evidence comes after disconnect; child startup must not postpone it.
+        CLASSPATH="$APP_DIR/../provider.jar" /system/bin/app_process /system/bin kr.ioniq5.usbcp.UsbPowerEvidence "$ACTIVE_IFACE" "$ACTIVE_TOKEN" STOPPING || :
     fi
     ACTIVE_IFACE=
     ACTIVE_TOKEN=
@@ -258,22 +264,27 @@ healthy_radio() {
 }
 
 run_radio() {
+    ap_power_gate && { ap_phase HU_POWER_OFF; return 2; }
     read_credentials || { ap_phase CONFIG_INVALID; return 1; }
     prepare_hostapd || { ap_phase HOSTAPD_PATCH_FAILED; return 1; }
     write_radio_config || { ap_phase AP_PERMISSION_FAILED; return 1; }
     ap_active_identity || { ap_phase IDENTITY_REJECTED; return 1; }
     if ! ip link set "$ACTIVE_IFACE" up; then
         sleep 2
+        ap_power_gate && { ap_phase HU_POWER_OFF; return 2; }
         ap_active_identity && ip link set "$ACTIVE_IFACE" up || { ap_phase NETWORK_SETUP_FAILED; return 1; }
     fi
     sleep 2
+    ap_power_gate && { ap_phase HU_POWER_OFF; return 2; }
     ap_active_identity && ensure_address || { ap_phase NETWORK_SETUP_FAILED; return 1; }
     ap_phase HOSTAPD_STARTING
     ap_start_logged hostapd "$TMP_DIR/hostapd_usb" -e "$WORK/entropy.bin" "$WORK/hostapd.conf" || return 1
     sleep 2
+    ap_power_gate && { ap_phase HU_POWER_OFF; return 2; }
     ap_running hostapd || { ap_phase HOSTAPD_EXITED; return 1; }
     ap_active_identity && open_network || { ap_phase NETWORK_SETUP_FAILED; return 1; }
     ap_phase DHCP_STARTING
+    ap_power_gate && { ap_phase HU_POWER_OFF; return 2; }
     # This adapter firmware redirects DHCP to port 1067. Android's dnsmasq also
     # needs a persistent netd-style stdin pipe (provided by ap_start_logged).
     ap_start_logged dnsmasq /system/bin/dnsmasq --keep-in-foreground --no-poll --no-resolv --port=0 \
@@ -281,9 +292,11 @@ run_radio() {
         --dhcp-range=192.168.43.10,192.168.43.100,12h --dhcp-option=3 --dhcp-option=6,192.168.43.1 \
         --user=wifi --group=wifi --pid-file="$TMP_DIR/dnsmasq.pid" --dhcp-leasefile="$TMP_DIR/leases/dnsmasq.leases" || return 1
     sleep 1
+    ap_power_gate && { ap_phase HU_POWER_OFF; return 2; }
     ap_running dnsmasq || { ap_phase DNSMASQ_EXITED; return 1; }
     ap_running hostapd || { ap_phase HOSTAPD_EXITED; return 1; }
     ap_phase SERVICES_RUNNING
+    CLASSPATH="$APP_DIR/../provider.jar" /system/bin/app_process /system/bin kr.ioniq5.usbcp.UsbPowerEvidence "$ACTIVE_IFACE" "$ACTIVE_TOKEN" ACTIVE || :
 }
 
 [ "$(getprop ro.build.product)" = NEEV.KOR.0000.V039.001.260902 ] &&
@@ -291,17 +304,37 @@ run_radio() {
 [ ! -e "$BASE/use-existing-ap" ] && [ ! -L "$BASE/use-existing-ap" ] || startup_fail EXISTING_AP_CONFLICT
 prepare_paths || startup_fail PREPARE_PATHS
 exec >> "$TMP_DIR/daemon_stdout.log" 2>&1
-echo 'AP_STARTUP version=1.0.1 phase=PRIVATE_LOG_READY'
-check_assets || { ap_phase VENDOR_ASSETS_INVALID; startup_fail VENDOR_ASSETS_INVALID; }
+echo 'AP_STARTUP version=1.0.2 phase=PRIVATE_LOG_READY'
 echo $$ > "$TMP_DIR/daemon.pid" || startup_fail PID_WRITE
 ap_phase STARTING
-trap 'stop_radio; exit 0' HUP INT TERM
+trap 'ap_power_stop; stop_radio; exit 0' HUP INT TERM
 ap_stop_children || { ap_phase STOP_TIMEOUT; startup_fail STOP_TIMEOUT; }
+ap_external_setting
+case "$EXTERNAL_DONGLE" in
+    ON) ;;
+    OFF) ap_phase EXTERNAL_DONGLE_OFF;;
+    *) ap_phase EXTERNAL_CONFIG_INVALID;;
+esac
+if [ "$EXTERNAL_DONGLE" != ON ]; then
+    # A disabled service stays alive without loading drivers or starting a radio.
+    # NEMESIS must not repeatedly restart a successfully disabled service.
+    while :; do sleep 30 & wait $!; done
+fi
+check_assets || { ap_phase VENDOR_ASSETS_INVALID; startup_fail VENDOR_ASSETS_INVALID; }
 preload_drivers
 ap_phase WAIT_ANDROID
 while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 2; done
-echo 'AP_STARTUP version=1.0.1 phase=ANDROID_READY' 
+echo 'AP_STARTUP version=1.0.2 phase=ANDROID_READY' 
+ap_power_start
 while :; do
+    if ap_power_gate; then
+        if [ -n "$ACTIVE_IFACE" ]; then
+            stop_radio || { sleep 3; continue; }
+        fi
+        ap_phase HU_POWER_OFF
+        sleep 3 & wait $!
+        continue
+    fi
     if healthy_radio; then
         sleep 3 & wait $!
         continue

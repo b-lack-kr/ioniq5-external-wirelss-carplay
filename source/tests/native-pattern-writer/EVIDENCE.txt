@@ -1,0 +1,39 @@
+NativePatternWriter host contract and native clear evidence
+
+The actual production writer is compiled with Java8 and only dedicated minimal
+Context, Points, CpTurns.PatternSink, and Dipo logging fixtures. No HMG-API v2,
+Cluster class, NavigationCluster class, or new convenience API is supplied.
+Points method lookup is the mapped framework.navigation_cluster.update_clu_data_new_14;
+the receiver comes from framework.navigation_cluster.new with the original Context.
+The writer validates five primitive-int parameters, void return, instance method,
+and receiver assignability before making any write. Missing/wrong mappings return
+null and leave ordinary projection free to continue without a pattern sink.
+
+Tests exercise exact tuple order, unsigned payload bounds, rejected arity/types,
+wrong receivers, missing API/linkage/constructor errors, inaccessible methods,
+target exceptions and retry, one failure log per failure streak, reset on success,
+and recorder exceptions. Logging is isolated so it cannot break null/false fallback.
+
+Native clear tuple: {65535,65535,65535,0,0}
+Source is the exact captured NEEV 260902 libExSLNavi.so; bounded disassemblies:
+  neev-carplay/research/live-ar-session-20261107/newjni-analysis/FrameInitSendData.asm
+  neev-carplay/research/live-ar-session-20261107/newjni-analysis/FrameClearData.asm
+  neev-carplay/research/live-ar-session-20261107/newjni-analysis/FrameSendPattern.asm
+FrameCluster::InitSendData at 0x26272f8 initializes pattern object offsets:
+  +96 guide = 65535 at 0x26273fc
+  +98 arrow0 = 65535 at 0x2627408
+  +100 arrow1 = 65535 at 0x262740e
+  +102 lane byte = 0 at 0x262741c
+  +103 color low nibble = 0 at 0x2627450..0x262745e
+FrameCluster::sendPatternData serializes those fields as keys10000..10004,
+eventually reaching CluDataNew14 in that order.
+
+FrameCluster::setClusterClearData at 0x2627ba4 also applies those values at
+0x2627bda..0x2627bf6, except when the main display byte+40 equals9 it skips
+that pattern reset (branch0x2627bd8). Therefore the tuple matches unconditional
+native initialization and the ordinary clear branch; this does not justify
+blindly reproducing every native lifecycle decision for phone projection.
+
+Run: python3 tests/test_native_pattern_writer.py
+The test proves reflection/failure behavior and the exact reset tuple transport.
+It does not claim visible cluster rendering from a successful Java invocation.

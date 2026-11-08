@@ -1,0 +1,13 @@
+{
+  "phoneprojection.usbcp_settings": {
+    "class": "com.daudio.app.phoneprojection.wireless.a.f"
+  },
+  "phoneprojection.usbcp_settings.open": {
+    "method": "p",
+    "params": [
+      "android.content.Context"
+    ],
+    "ret": "void",
+    "static": true
+  }
+}

@@ -1,0 +1,171 @@
+"""A public 1.0.1 upgrade repairs only a missing, on-car-verified Korean map."""
+import shutil
+import unittest
+
+import test_installer as fixtures
+
+
+NO_MAP = (
+    'hook map: none, hooks off (no hook map for this car '
+    '(NEEV.KOR.0000.V039.001.260902): hooks are off, everything else runs)'
+)
+MAP_OFF = (
+    "hook map: probed for Ioniq 5 (kor 260902), hooks off "
+    "(the map isn't checked on a car yet)"
+)
+write = fixtures.write
+
+
+class MissingMapRepair(unittest.TestCase):
+    # Reuse the shell/firmware isolation and the real pinned 1.0.1 package,
+    # without inheriting and running the unrelated installer test cases.
+    run_usb = fixtures.Installation.run_usb
+    public101 = fixtures.Installation.public101
+    legacy = fixtures.Installation.legacy
+
+    def setUp(self):
+        fixtures.Installation.setUp(self)
+        mock = fixtures.MOCK.replace(
+            " if hit('engine-'+op):sys.exit(3)",
+            " with (root/'engine-ops').open('a') as log: log.write(op+'\\n')\n"
+            " if hit('engine-'+op):sys.exit(3)",
+        ).replace(
+            " if op=='verify-map':\n",
+            " if op=='verify-map':\n"
+            "  assert (H/'maps/hyundai/neev/kor/260902/car.json').is_file()\n"
+            "  assert (M/'.disabled').is_file()\n"
+            "  if (root/'map-fails-verification').exists():\n"
+            "   write(H/'state/map-check.json','failed on-car receipt')\n"
+            "   print('FAILED framework.point: wrong method');sys.exit(1)\n",
+        ).replace(
+            " elif op=='map':print('hook map: probed for Ioniq 5, hooks on')",
+            " elif op=='map':\n"
+            "  override=root/'map-output'\n"
+            "  receipt=H/'state/map-check.json'\n"
+            "  if override.exists():print(override.read_text())\n"
+            "  elif not (H/'maps/hyundai/neev/kor/260902').exists():\n"
+            f"   print({NO_MAP!r})\n"
+            "  elif receipt.is_file() and receipt.read_text()=='checked here':\n"
+            "   after=root/'map-after-output'\n"
+            "   print(after.read_text() if after.exists() else 'hook map: probed for Ioniq 5, hooks on')\n"
+            f"  else:print({MAP_OFF!r})\n"
+            "  if (root/'map-command-fails').exists():sys.exit(3)",
+        )
+        write(self.bin/'app_process', mock, True)
+
+    def missing_public101(self):
+        old = self.public101()
+        shutil.rmtree(self.map)
+        write(self.root/'hmg-version', 'hmgapid 1.0.2')
+        return old
+
+    def operations(self):
+        return (self.root/'engine-ops').read_text().splitlines()
+
+    def assert_unchanged_public101(self, manifest):
+        self.assertEqual((self.M/'META-HMGAPI/manifest.json').read_bytes(), manifest)
+        self.assertEqual((self.W/'UPGRADE_CURRENT.txt').read_text().strip(), '1.0.1')
+        self.assertEqual((self.H/'state/map-check.json').read_text(), 'previous-map-check')
+        self.assertEqual((self.W/'config/hotspot.conf').read_text(), 'prior-secret')
+        self.assertEqual((self.W/'config/ap-identity').read_text(), 'prior-id')
+        self.assertFalse((self.M/'.disabled').exists())
+
+    def test_missing_map_is_verified_before_mod_install(self):
+        old = self.missing_public101()
+        original_kit = (old/'kit/MANIFEST.md5').read_bytes()
+        other_map = self.H/'maps/hyundai/neev/usa/260507/car.json'
+        write(other_map, 'unrelated map')
+        self.assertEqual(self.run_usb(), 'COMPLETE')
+        self.assertEqual((self.R/'STATUS').read_text().strip(), 'INSTALLED')
+        self.assertEqual((self.R/'map-before.log').read_text().strip(), NO_MAP)
+        self.assertEqual((self.H/'state/map-check.json').read_text(), 'checked here')
+        self.assertEqual((self.R/'backup/map-check').read_text(), 'previous-map-check')
+        self.assertFalse((self.R/'backup/map-before.json').exists())
+        self.assertEqual((self.W/'UPGRADE_CURRENT.txt').read_text().strip(), '1.0.15')
+        self.assertEqual((self.W/'config/hotspot.conf').read_text(), 'prior-secret')
+        self.assertEqual((old/'kit/MANIFEST.md5').read_bytes(), original_kit)
+        self.assertEqual(other_map.read_text(), 'unrelated map')
+        self.assertEqual([op for op in self.operations() if op in ('map', 'verify-map', 'install')],
+                         ['map', 'verify-map', 'map', 'install'])
+
+    def test_existing_inactive_map_is_not_replaced(self):
+        self.public101()
+        manifest = (self.M/'META-HMGAPI/manifest.json').read_bytes()
+        self.assertEqual(self.run_usb(False), 'PREVIOUS_MAP_NOT_ACTIVE')
+        self.assertEqual((self.map/'car.json').read_text(), 'previous-map')
+        self.assertEqual((self.map/'custom.json').read_text(), 'keep-map')
+        self.assert_unchanged_public101(manifest)
+        self.assertNotIn('verify-map', self.operations())
+        self.assertFalse((self.R/'backup').exists())
+
+    def test_existing_map_even_with_no_map_output_is_rejected(self):
+        self.public101()
+        write(self.root/'map-output', NO_MAP)
+        self.assertEqual(self.run_usb(False), 'PREVIOUS_MAP_NOT_ACTIVE')
+        self.assertEqual((self.map/'car.json').read_text(), 'previous-map')
+        self.assertNotIn('verify-map', self.operations())
+
+    def test_missing_path_with_mismatch_or_other_output_is_rejected(self):
+        self.missing_public101()
+        manifest = (self.M/'META-HMGAPI/manifest.json').read_bytes()
+        for output in (
+            'hook map: mismatch, hooks off (framework checksum differs)',
+            "hook map: none, hooks off (can't read the hook map: bad JSON)",
+            MAP_OFF,
+            NO_MAP.replace('NEEV.KOR.', 'NEEV.USA.'),
+            NO_MAP + '\nadditional unexpected result',
+            '',
+        ):
+            with self.subTest(output=output):
+                write(self.root/'map-output', output)
+                self.assertEqual(self.run_usb(False), 'PREVIOUS_MAP_NOT_ACTIVE')
+                self.assertFalse(self.map.exists())
+                self.assert_unchanged_public101(manifest)
+                self.assertFalse((self.R/'backup').exists())
+        self.assertNotIn('verify-map', self.operations())
+
+    def test_nonzero_map_command_cannot_authorize_repair(self):
+        self.missing_public101()
+        write(self.root/'map-command-fails', '')
+        self.assertEqual(self.run_usb(False), 'PREVIOUS_MAP_NOT_ACTIVE')
+        self.assertFalse(self.map.exists())
+        self.assertNotIn('verify-map', self.operations())
+
+    def test_dangling_map_symlink_cannot_authorize_repair(self):
+        self.missing_public101()
+        self.map.symlink_to(self.root/'missing-target', target_is_directory=True)
+        self.assertEqual(self.run_usb(False), 'PREVIOUS_MAP_NOT_ACTIVE')
+        self.assertTrue(self.map.is_symlink())
+        self.assertNotIn('verify-map', self.operations())
+
+    def test_legacy_upgrade_does_not_gain_missing_map_exception(self):
+        self.legacy()
+        self.assertEqual(self.run_usb(False), 'PREVIOUS_MAP_NOT_ACTIVE')
+        self.assertFalse(self.map.exists())
+        self.assertEqual((self.W/'UPGRADE_CURRENT.txt').read_text().strip(), '0.1.10')
+        self.assertNotIn('verify-map', self.operations())
+
+    def test_failed_verification_restores_absence_and_stale_receipt(self):
+        self.missing_public101()
+        manifest = (self.M/'META-HMGAPI/manifest.json').read_bytes()
+        write(self.root/'map-fails-verification', '')
+        self.assertEqual(self.run_usb(False), 'INSTALL_FAILED_RESTORED')
+        self.assertEqual((self.R/'STATUS').read_text().strip(), 'RESTORED')
+        self.assertFalse(self.map.exists())
+        self.assert_unchanged_public101(manifest)
+        self.assertEqual((self.R/'backup/map-check').read_text(), 'previous-map-check')
+        self.assertTrue((self.R/'backup/published-map/car.json').is_file())
+        self.assertNotIn('install', self.operations())
+
+    def test_verified_receipt_without_active_map_still_rolls_back(self):
+        self.missing_public101()
+        manifest = (self.M/'META-HMGAPI/manifest.json').read_bytes()
+        write(self.root/'map-after-output', MAP_OFF)
+        self.assertEqual(self.run_usb(False), 'INSTALL_FAILED_RESTORED')
+        self.assertFalse(self.map.exists())
+        self.assert_unchanged_public101(manifest)
+        self.assertNotIn('install', self.operations())
+
+
+if __name__ == '__main__':
+    unittest.main()

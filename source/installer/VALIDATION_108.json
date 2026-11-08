@@ -1,0 +1,96 @@
+{
+  "release": "1.0.8",
+  "vehicle_tested": false,
+  "build_status": "PASS",
+  "additional_pinned_previous": {
+    "version": "1.0.7",
+    "archive_sha256": "4a2253a8ea351a145ab8742a092b878bd1f559d181a138a9b33ebc71cc5ffb3c",
+    "kit_manifest_md5": "51867b7e289e9f48b21cf9c5ed456303",
+    "signed_mod_manifest_md5": "2bd01e8dfdee15774e003fb9c4eca170"
+  },
+  "host_checks": {
+    "new_migration": {
+      "result": "PASS",
+      "tests": 13,
+      "module": "installer/test_upgrade_108.py",
+      "log": "validation/installer-108-migration.log"
+    },
+    "usb_auto": {
+      "result": "PASS",
+      "tests": 27,
+      "log": "validation/auto-prebuild.log"
+    },
+    "native_package": {
+      "result": "PASS",
+      "tests": 15,
+      "log": "validation/native-prebuild.log"
+    },
+    "python_shell_syntax": {
+      "result": "PASS"
+    },
+    "provider_matches_106_with_108_log_version": {
+      "result": "PASS"
+    },
+    "historical_pin_functions_101_through_106_and_removed100_unchanged": {
+      "result": "PASS"
+    },
+    "built_wrapper": {
+      "result": "PASS",
+      "tests": 21,
+      "log": "validation/joint-final.txt",
+      "note": "Wrapper tests passed before final logging-only multi-component change; wrapper bytes unchanged."
+    },
+    "ap": {
+      "result": "PASS",
+      "tests": 33,
+      "log": "validation/ap-final.txt"
+    },
+    "history": {
+      "result": "PASS",
+      "log": "validation/history-final.txt"
+    },
+    "tbt": {
+      "result": "PASS",
+      "standard_checks": 155875,
+      "transition_checks": 71,
+      "phase_checks": 44,
+      "record": "research/leafia-ar/REVIEW.txt"
+    },
+    "native_evidence": {
+      "result": "PASS",
+      "checks": 48,
+      "log": "validation/native-evidence-test.txt"
+    }
+  },
+  "past_results_not_rerun": {
+    "installer_107_tests": 111,
+    "record": "installer/VALIDATION_107.json"
+  },
+  "limitations": [
+    "Host tests emulate vehicle IPC; real signed payload verification and archive audit completed separately.",
+    "No vehicle success or physical AR cursor movement claim.",
+    "Reference transition/bar restoration does not implement a known cursor-passing state machine."
+  ],
+  "source_sha256": {
+    "source/mod/src/kr/ioniq5/usbcp/Provider.java": "a75d26988bc33b3db8a30439953c58d6067f3a940e804bdb46eff4a8ed14c322",
+    "source/installer/templates/NEMESIS.sh": "74c1c2253e475a6bdeb184f36eaf21a3c9621c5f5c15762746de0e9d10684242",
+    "source/installer/templates/operate.sh": "bd04d2dd3c02e0d4c4b81a05fa55aee0b072c84be89fbc3f8d48b796a12733c3",
+    "source/installer/build_installer.py": "3702ecd031695597ef3af8828d01b9f33f179ce1a2843a2e02f390d1b2077615",
+    "source/installer/test_upgrade_108.py": "4b8fa5a0068726659848a264071113d49c9d69d8df26e0ae3248171d4e56d207",
+    "source/release/USB_AUTO.sh": "b49ac1fa9f48fc5ef2a88dd73db484c3e5296b3625b1eb121f611b934fda763a",
+    "source/release/NEMESIS.sh": "662ee469e5648b27f6e4b1d2011c5beef7146af6f98eadb581762219d6f1c340",
+    "source/release/build.py": "0b26d5b62ca37771c0607a93b31c8d1a21e281f3d9eed402b19e900ef88742fa",
+    "source/release/native/NEMESIS.data": "07d7328e1fe37a53e7c76edc162ed2388cb813687d837d14c5c35d59689086b7",
+    "source/tests/test_usb_auto.py": "ff1833a9945c35efd9ff10c58888537b61fd2e0c6e159df57b438ce948fafcb6",
+    "source/release/test_native_package.py": "ca56999388a44703c9d6c0b1a720c6abb5f4cddaebe55a8df53637227b6d5c67",
+    "package_release.py": "ff84a8cc306c77e8a3081900b6f568b4c8b124f25f0a707c356ded829365170d",
+    "source/BUILD-SOURCE-KO.txt": "e8747861dcb05a185db183fa2af27fa2e86ca40e12f3f57ad549ca90f64edc14",
+    "source/installer/TRANSACTION_108.txt": "ad7612a700ea1d80074bdc02fdd31a0cf0caf7b3c8dcddf97990669b8adfc903"
+  },
+  "built_artifact": {
+    "name": "NEEV_260902_CarPlay_1.0.8_USB.zip",
+    "sha256": "4ea76800e2cb7a264e2c19adad7c4c2fec93a41e54dd4939d8066ef72e276d39",
+    "signature_and_archive_audit": "PASS",
+    "log": "validation/build-final.log"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "btsettings.usbcp_settings": {
+    "class": "com.android.settings2.bluetooth.iP"
+  },
+  "btsettings.usbcp_settings.open": {
+    "method": "aQ",
+    "params": [
+      "android.content.Context"
+    ],
+    "ret": "void",
+    "static": true
+  }
+}

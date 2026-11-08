@@ -60,7 +60,7 @@ for folder in ('recipes','ap'):
 for name in ('ap/service.sh','ap/runtime.sh'):
     subprocess.run(['/bin/sh','-n',payload/name],check=True)
 manifest = json.loads((payload/'mod.json').read_text())
-assert manifest['id']=='neev-usb-carplay' and manifest['version']=='1.0.1'
+assert manifest['id']=='neev-usb-carplay' and manifest['version']=='1.0.2'
 wanted = {s for seq in manifest['hooks']['native'].values() for s in seq}
 assert wanted == {str(p.relative_to(payload)) for p in (payload/'recipes').iterdir()}
 # Only USB devices that the local identity validator accepts trigger driver loading.
@@ -76,7 +76,7 @@ assert len(rows) == 30
 classes = list(app.rglob('*.class'))
 dex('hooks.jar', classes)
 provider = [p for p in classes if p.relative_to(app).as_posix().startswith('kr/ioniq5/usbcp/')
-            and not p.name.startswith('UsbCarplay')]
+            and not p.name.startswith(('UsbCarplay','OemPower','WelcomePower','ProjectionSettings'))]
 dex('provider.jar',provider)
 if args.sign_key:
     cmd = [j/'java','-cp',sdk,'hmgapi.engine.Signing']

@@ -1,0 +1,52 @@
+1.0.15 차량 차속 입력 일치 — CarPlay에만 적용
+
+변경
+이미 사용하는 PASCD 차량 차속 입력에 더해, 요청된 무선 CarPlay RMC
+출력 문장의 속도 필드만 마지막 정상 MICOM 차속으로 맞춘다. GPS 좌표,
+시각, 진행 방향, 날짜, fix 상태, 나머지 문장과 종료 문자는 그대로다.
+새 속도에 맞게 NMEA XOR 체크섬만 다시 계산한다. 시스템 GPS, 순정 내비,
+다른 앱의 Location 객체는 수정하지 않는다. +3km/h 등의 가산은 없다.
+
+실제 타깃 근거
+improvements/20261105/gps-analysis/target-smali/com/daudio/app/dipo/h/d.smali:
+onVehicleSpeedChanged(int)에서0..510 입력을 받아3.6으로 나눠 mSpeed(m/s)에
+넣는다. 따라서 관측 콜백 단위는km/h이다. OEM은511/음수를0으로 바꾸므로
+우리는 해당 원시 입력을 무효 처리하고 이전 속도도 폐기한다.
+
+같은 디렉터리 f.smali:
+an(String)은 동기화된 per-phone Iap2LocationMsg 생성/송신 경로다.
+e(f) accessor는RMC 요청 여부 ri:boolean을 반환한다. start b(Iap2NotiMsg)는
+차량 속도 listener를 등록하고, kt()는 listener를 해제하며RMC 요청을 끈다.
+aq(String) OEM RMC formatter는 원래 GPRMC의7번째 comma 필드를 속도로
+읽고 이후 course/magnetic/mode 일부를 정리한다. 우리 hook은 이 이후의
+an(String)에만 적용한다. OEM formatter가 만든 다른 필드까지 원복하지 않는다.
+NMEA 참조: https://receiverhelp.trimble.com/oem-gnss/nmea0183-messages-rmc.html
+(속도 단위 knots, fix status A/V; 제조사 문서의 field표는 좌표/방향을 묶어 표시.)
+
+적용 조건
+- 현재 성공적으로 시작한 무선 CarPlay 객체와 세션 세대가 일치해야 한다.
+- USB 유선 경로에는 적용하지 않는다. 모드/Bridge 활성 조건을 확인한다.
+- 현재 location 요청이 정상 완료됐고 OEM RMC 요청 ri=true여야 한다.
+- 같은 요청/세션에서 실제 정상 차속 콜백을 관측해야 한다. 초기값0을 읽지 않는다.
+- 요청 교체, 종료, 세션 교체/종료/재시작, 잘못된 차속은 관측값을 무효화한다.
+- 같은 속도를 계속 유지할 수 있으므로 콜백 나이만으로 속도를 바꾸거나0으로 만들지
+  않는다. 마지막 실제 관측 나이는 로그에 남긴다.
+- 원래 GPRMC의 ASCII 형식, 길이<=256, 필드 수, checksum, 좌표/숫자 범위,
+  시간/날짜 형식 및 fix=A를 확인한다. invalid/estimated/manual/simulated fix,
+  잘못된 문장이나 지원하지 않는 타입은 원문 그대로 보낸다.
+- 스냅샷을 만든 뒤 요청/세대/값이 바뀌면 적용 직전 재검사에서 원문을 유지한다.
+
+숫자 기록
+기존 USB_CP_LOCATION window의rmc_kmh_milli는 원래 GPS callback 입력이다.
+새 rmc_window의original_kmh_milli는OEM formatter 이후, 우리가 수정하기 전
+송신 문장의 속도다. output_kmh_milli는 수정한 출력 속도이고 micom_kmh는
+그 입력으로 사용한 실제 차량 콜백 값이다. knots 소수3자리 반올림에 따른
+오차는 약0.001km/h 이내다. 원시NMEA, 좌표, 날짜/시각 문자열은 저장하지 않는다.
+replaced/unchanged, skip_gate/source/invalid/no_fix 카운터를10초마다 요약한다.
+이 기록은 hook 출력값이며 iPhone 수신 확인이나 내비 앱 화면값 확인은 아니다.
+
+실제 표시의 한계
+이 변경은 차량이 CarPlay로 주는 두 속도 입력의 일관성을 높인다.
+iPhone/iOS 또는 네이버/카카오 앱이 차량 RMC/PASCD 대신 자체 센서나 위치
+차분을 선택하면 앱 화면 속도가 그대로일 수 있다. 계기판의 표시 보정값을
+강제로 따라가게 하는 기능이나 앱 내부 계산을 바꾸는 기능은 아니다.

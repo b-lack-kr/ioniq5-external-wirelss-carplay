@@ -1,0 +1,77 @@
+{
+  "release": "1.0.7",
+  "vehicle_tested": false,
+  "direct_from_user_version": "1.0.5",
+  "previous_106_required": false,
+  "additional_pinned_previous": {
+    "version": "1.0.6",
+    "archive_sha256": "626fedc17492d1aa9d489b647842d7d615d6497a73144a8af566eee49d0940aa",
+    "kit_manifest_md5": "2c6692b98c3dc8aaa04a29e8936b1c34",
+    "signed_mod_manifest_md5": "996a307153f0a2bdfc5379235d386e7e"
+  },
+  "host_checks": {
+    "installer": {
+      "result": "PASS",
+      "tests": 111,
+      "modules": {
+        "test_installer.py": 38,
+        "test_missing_map.py": 9,
+        "test_upgrade_102.py": 12,
+        "test_upgrade_104.py": 12,
+        "test_upgrade_105.py": 14,
+        "test_upgrade_106.py": 13,
+        "test_upgrade_107.py": 13
+      },
+      "log": "validation/installer-prebuild.log",
+      "scope": [
+        "fresh install and restore",
+        "authenticated historical updates including direct1.0.5 and1.0.6",
+        "exact rollback and retained oldrecords",
+        "uninstall then clean install",
+        "invalid and changedkit/mod rejection",
+        "missingmap repair with verification",
+        "failedinstall and reboot recovery"
+      ]
+    },
+    "usb_auto": {
+      "result": "PASS",
+      "tests": 26,
+      "log": "validation/auto-prebuild.log",
+      "scope": [
+        "same1.0.7 collectonly",
+        "knownolder versions including1.0.5 and1.0.6 update",
+        "removed1.0.4/1.0.5/1.0.6/1.0.7 withoutprintf",
+        "no fallback reinstall on collectfailure",
+        "no unknown/newer downgrade"
+      ]
+    },
+    "native_package": {
+      "result": "PASS",
+      "tests": 15,
+      "log": "validation/native-prebuild.log",
+      "scope": [
+        "exact USB source and descriptors",
+        "1.0.7 package version",
+        "synchronous installation",
+        "explicituninstall vs updatestaging",
+        "HMG sync only"
+      ]
+    },
+    "python_shell_syntax": {
+      "result": "PASS"
+    }
+  },
+  "build_status": "PASS: javac, DEX035, signed HMG mod, archive integrity and public payload audit",
+  "artifact_joint_tests": {
+    "result": "PASS",
+    "tests": 21,
+    "artifact": "NEEV_260902_CarPlay_1.0.7_USB.zip",
+    "sha256": "4a2253a8ea351a145ab8742a092b878bd1f559d181a138a9b33ebc71cc5ffb3c",
+    "log": "validation/joint-installer-final.log"
+  },
+  "limitations": [
+    "Android IPC and engineoperations mocked on host",
+    "real vehicle install and cursor animation unverified",
+    "no USB writes during thesechecks"
+  ]
+}

@@ -1,0 +1,23 @@
+Historical v1.0.13 report only. For current behavior see CP-BASELINE-1.0.14.txt.
+
+CarPlay v1.0.13 validation scope
+
+Active CP renderer tests: test_maneuvers.py, test_lanes.py, test_settings_policy.py.
+They exercise the actual restored v1.0.9 renderer; settings policy additionally
+checks the shared AR switch, stale stored toggles and AR-independent angle PE14.
+Maneuver-only inputs must not schedule the v1.0.11 display-refresh heartbeat.
+The existing bounded trip-total flush remains; do not confuse it with a recurring
+main TBT/lane/HUD timer.
+
+test_junction_bridge.py now exercises the restored transport callback (exact byte
+forwarding, no observational raw-lane parser). Filename is preserved for tooling.
+1.0.12 versions of the changed CP tests are retained under archived-v1.0.12/.
+CpJunctionsTest/CpLaneDecoderTest/Guidance147Test/CpLaneFrameTest and the retained
+standalone CP helper tests are historical/algorithm references; passing them does
+not claim those Seogaemo features are active in the v1.0.13 CarPlay renderer.
+Android Auto uses its independent gpm package and continues its separate tests.
+
+The v1.0.9 Bridge source is byte-identical. CpTurns differs only by an unused
+ApproachSink declaration for retained helper source compatibility and independent
+angle-based PE14 gating when AR is OFF. Dipo's constructor/owner returns to the
+v1.0.9 form while the public setting is ar_view (default false).

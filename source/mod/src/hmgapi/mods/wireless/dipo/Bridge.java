@@ -76,7 +76,10 @@ final class Bridge {
     // into a single session_created callback. A raw 0 by itself is still wired.
     private static volatile long sRequestedBtEpoch = -1, sConfirmedBtEpoch = -1, sCpBtEpoch = -1;
 
+    static long rawLaneEpoch() { return sEpoch; }
+
     static synchronized long invalidatePending() {
+        try { CpRawLanes.stop(); } catch (Throwable ignored) {}
         sScheduledAddr = null;
         sRequestedBtEpoch = sConfirmedBtEpoch = sCpBtEpoch = -1;
         return ++sEpoch;
@@ -314,6 +317,7 @@ final class Bridge {
             if (hadClient) sendDetach();
         }
         if (newObject) {
+            try { CpRawLanes.start(); } catch (Throwable ignored) {}
             CarPlayMedia.reset();
             long epoch = sEpoch;
             sCpBtEpoch = sSession && !sUsb && sAddr != null && sConfirmedBtEpoch == epoch
@@ -357,6 +361,9 @@ final class Bridge {
                     if (sPendingIn.size() < MAX_PENDING) sPendingIn.add(b);
                 }
             }
+            // Optional observation follows original transport delivery. Parsing and
+            // lane rendering are confined to separate bounded workers.
+            try { CpRawLanes.observe(cp,b,len); } catch (Throwable ignored) {}
         } catch (Throwable t) {
             error("onCpIapIn", t);
         }

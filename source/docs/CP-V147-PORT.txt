@@ -1,0 +1,77 @@
+Historical reference: v1.0.13 restores the v1.0.9 CarPlay execution path.
+The later CP periodic refresh, raw-lane parser, lane-distance writer and lane-based
+PE14 selector documented below are NOT active in this version. See current
+CHANGELOG-1.0.13-KO.txt and tests/CP-BASELINE-1.0.13.txt. AA retains its own port.
+
+v1.0.12 local follow-up: only ar_view and external_dongle are public settings.
+AR defaults off and controls CP/AA together; basic guidance, lanes and CP PE14 are
+independent. Helpers are duplicated per app-part package to respect the HMG loader
+boundary; their algorithms are parity-tested. The following is the retained
+v1.0.11 provenance/behavior record, not the current settings catalog.
+
+CP TBT / lane / native guidance port, v1.0.11
+
+Source provenance
+  seogaemo/hmg-seogaemo commit7616e43f669916445f151a7aeb279b32ea09cd4b
+  modules/wireless-carplay-and-aa/payload/src/hmgapi/mods/wireless/dipo/
+  CpTurns.java.src, CpLaneFrame.java.src, CpGuidance.java.src
+  AGPL-3.0-or-later. Existing NEEV protocol parser/ownership is retained.
+
+Applied behavior
+  Shared CpLaneFrame uses three separate2-bit statuses and the verified glyph
+  pairs/triples, rather than the older r8.2 two-field approximation. CP status0
+  is grey;1 white on route and grey otherwise;2 blue on route and grey otherwise.
+  Without matching highlight, valid arrows all take the lane's default color.
+  Unknown lane positions stay present. Invalid directions and inputs are bounded.
+  OEM primary/secondary arrays are merged; canonical raw records take priority
+  only for their matching current component/index. Future lanes cannot replace
+  the current lane strip. Raw-only changes can update the exit-after-lane-change
+  picture without renewing a real-distance approach lease.
+
+  A session-owned monotonic timer refreshes current main/F1/HUD distance at1s.
+  F2 and lane-distance box resend at2s. CP v147 does not use750ms; that interval
+  is the AA lane timer. Fresh distance deltas do not starve F2 refresh. The timer
+  repeats cached data only: no estimated distance, cursor motion or new progress.
+  Source replacement/end/native takeover cancels stale timers. Lane distance
+  uses optional exact mapped updateRemainDis, with feet/yards converted to metres
+  and invalid sentinel65535/15/15/0. Failed writes/clears retry while the same
+  active owner remains. No post-owner-loss clear writes over native navigation.
+  The lane box is distance to the next maneuver; CP has no separate lane-point
+  distance. updateRemainDis is not treated as a moving AR-cursor channel.
+
+  Loading route-state3=>native9 and reroute state5=>native10 work before the
+  maneuver arrives. Both release approach/junction and clear prior F2/lanes/box.
+  Resume requires fresh distance; old lane evidence is discarded on entry.
+  End/absence clears the displayed phone turn to idle8, avoiding loading0.
+  Ordinary turns use nearest45-degree native bands, retaining explicit sign/
+  sharpness contradiction rejection and separately validated precise side-street
+  geometry. U-turn rejects explicit nonzero abs(angle)<158. Plain left/right
+  inside roundabouts needs an explicit nonzero exit; ordinal exits cannot invent
+  a clock angle. Dedicated roundabout types can use an explicit0degree exit.
+  Arrival10/12/27=>native3, left24=>2 at270, right25=>2 at90; explicit arrived=>3.
+  Ramp8/9/22/23=>17/18. Current visible raw lanes with a nonrecommended exit edge
+  and some recommended lane select19/20; missing/future/hidden/contradictory
+  evidence retains the plain exit or projection. Keep/fork advice does not invent
+  a Y-junction. PE14 still uses the existing verified selector/table and ownership.
+
+Local policy and intentional differences
+  setCloseApproach(true) chooses50m for ordinary maneuvers and keeps600m highway.
+  This is the user's requested experimental close-approach policy, not measured
+  stock onset. false/static reference helpers retain300m ordinary/600m highway.
+  Main native mode, finebar and PE14 use the same instance window. The existing
+  native main-bar minimum10 remains; finebar spans0..100. A moving cursor has
+  no newly proven transport field and is not claimed by this work.
+  Stock dynamic onset depends on unavailable map road type/context. The port does
+  not infer SERVICE_ROAD23/24 from highway words in an instruction/road name.
+  Raw distance freshness, formatted-distance fallback, UTF16 surrogate boundary,
+  trip throttling, raw parser bounds, session epochs and junction write retry are
+  preserved. F2 is explicitly blanked on arrival so heartbeat cannot replay the
+  old arrow. No framework/core API upgrade is required by the lane-box adapter.
+
+Validation
+  tests/test_lanes.py: packet, lifecycle, actual timers/optional box, shared glyphs.
+  tests/test_maneuvers.py: existing parser/distance/maneuver/junction regressions,
+  49/50/51m close boundaries, unchanged600m highway, Uturn157/158 symmetry,
+  roundabout entry/absence, state3/5 recovery, current-lane ramp changes and arrivals.
+  Host tests validate emitted tuples and scheduling. On-car graphics, colors,
+  capture timing and actual AR cursor motion remain vehicle acceptance work.

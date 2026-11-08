@@ -1,0 +1,86 @@
+v1.0.12 / v147 policy supersedes the historical two-field renderer below.
+- CpLaneFrame has three independent 2-bit fields (slot2 at bits4..5), using
+  v147's reported vehicle-tested component glyph pairs/triples. Status0 grey;
+  status1 route white/other grey; status2 route blue/other grey; no matching
+  highlight means every valid arrow takes the lane's default color. AA calls
+  the same renderer without status2. This is source/car evidence from upstream,
+  not a claim that the current vehicle has visually accepted this new package.
+- OEM callback primary/secondary arrays are merged before rendering, preserving
+  primary-only arrows. Canonical raw TLV includes the complete array and takes
+  priority at the exact selected component/index. Raw future/other-component
+  data, source changes, explicit clears and output-owner loss remain guarded.
+- Tests now include 288496 shared-renderer invariants, 63 actual CP refresh/box
+  lifecycle checks, and the existing 27 packet +30 lane association checks.
+- See docs/CP-V147-PORT.txt for pinned provenance, timing and remaining limits.
+
+Historical implementation evidence follows; superseded color encoding is not
+used by this release.
+
+Lane guidance evidence; v1.0.4 update, 2026-11-06
+
+v1.0.4 supersedes the older frame-status assumptions below.
+- The exact reconstructed Korean r8.2 LeafiaPhoneFrame smali packs two 2-bit
+  per-arrow styles into byte3+lane; arrow3 shares arrow2's style. Independently
+  written CpTurns.packLane matches its output for 9,600 valid arrow/style tuples.
+- Explicit highlighted angles select style2. Status1 or2 alone no longer invents
+  a recommended direction; other styles follow observed r8.2 normal1/status0->3.
+- Primary-only angles remain included, improving on the reference secondary-only
+  loop. Source lane order and unknown physical positions remain unchanged.
+- Component/index cache and current-route or linked-maneuver association now
+  retain pre-maneuver records and reject stale/future/unrelated output. Route17
+  is guidance record count, not physical lane count. Route18 phone-UI visibility
+  alone does not suppress cluster lanes. No last-lane off-by-one was found;
+  tests cover zero guidance index and all eight physical lanes.
+- Current tests/test_lanes.py: 27 frame/angle checks + 30 lifecycle checks.
+- See docs/TBT-1.0.4-KO.txt for behavior, provenance, and vehicle limits.
+
+Historical v1.0.2 evidence (the old status-byte assumption is superseded)
+
+Confirmed source defect
+- CpTurns.laneOne previously used iAP2 field 3 (LaneAngleHighlight) only to set
+  lane status=2, but encoded arrows only from field 2 (LaneAngle).
+- Apple's local SDK CPLane.h says primaryAngle/highlightedAngle must be excluded
+  from secondaryAngles/angles. A primary-only lane therefore encoded [2,0,0,0].
+- A regression fixture with primary=0 and no secondary angles fails against the
+  unmodified public1.0.1 source; the draft emits [2,1,0,0].
+
+Sources
+- /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk/System/iOSSupport/System/Library/Frameworks/CarPlay.framework/Versions/A/Headers/CPLane.h
+  Lines10-15: public CPLaneStatus enum. Lines35-53: primary and secondary contract.
+- https://developer.apple.com/documentation/carplay/cplane/primaryangle
+- https://developer.apple.com/documentation/carplay/cplane/highlightedangle
+- analysis/dipo-reference-decompiled/sources/com/daudio/app/dipo/e/u.java:
+  f(Object), around690: iAP2 LaneInformation index0/status1/angle2/highlight3;
+  values use Iap2ObjItem types5 or8. applyLanes around528 is reference81bytewriter.
+- neev-carplay/improvements/20261105/reference-HKMC_Navi_ExSL/sources/com/mnsoft/navi/message/a.java:
+  around1487: different legacy23byte updateTPLaneInfo decoder. Its direction and
+  recommended bitmasks must NOT be assumed to describe raw updateLaneInfo81byte.
+- neev-carplay/improvements/20261105/reference-HKMC_GPM/sources/com/google/android/projection/sink/navigation/GpmNaviTBTManager.java:
+  sendLanes around405 uses the same existing81byte layout as currentCpTurns.
+
+Changes and bounds
+- Encode explicit highlighted angle before secondary angles, keeping it if more
+  than three directions exist. Deduplicate directions mapped to the same icon.
+- Retain reference status2 and explicit valid highlight handling. Public SDK
+  Good=1 does not establish the wire enum. USE_SDK_GOOD_LANE_STATUS is false;
+  status1 alone does not create a recommendation in this draft.
+- Reject invalid angles outside one signed/unsigned full circle, including65535.
+- Metadata-only LaneGuidance does not erase lanes; explicit empty list still does.
+- Preserve physical lane order, including incomplete lane groups. Do not trim two
+  arbitrary slots or alter the unknown frame fields. All unused output stays zero.
+- Log at most12 distinct lane shapes per process via existing Dipo.log / history;
+  only counts, status, and up to4 angles per field. No names or positions.
+
+Validation
+python3 neev-carplay/improvements/20261105/source/tests/test_lanes.py
+24checks including primary-only, disjoint angles, priority under3arrowlimit,
+deduplication, unknown status, sentinels, lane order, output disable, explicit clear,
+metadata-only packets and bounded logging. Uses actualCpTurns with HMG/iAP2 stubs.
+
+Not established
+- This proves a sender bug, not that these exact iAP2 shapes caused the user's
+  two blank boxes. Real lane payload / resulting cluster image still needed.
+- The target NavigationCluster81byte parser and per-arrow recommendation encoding
+  were unavailable. Layout and reference lane status meanings were preserved.
+- No claim that HUD highlight/color or all empty boxes are fixed on the vehicle.
+- No signing, USB deployment, public repo update, or version change performed.

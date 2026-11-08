@@ -1,0 +1,50 @@
+v1.0.15 굿바이 애니메이션 시작 시 외부 Wi-Fi 종료
+
+이번에 실제 차량에서 읽은 실행 파일로 확인한 부분
+- /system/app/WelcomeGoodbye.odex: 49,480 bytes
+  MD5 33376e36199a38b928bceec54b0c148b
+  SHA-256 2fa5d13e8d7f42d6c174f573ed3437ae25873c8636a01671b16809be3874ccd6
+- com.mobis.welcome.WelcomeService.e(int)는 animationStatusBroadcast 메서드다.
+  public static getMode()는 실제 mMode를 그대로 반환한다.
+  mode=0은 Welcome, mode=1은 Goodbye이다.
+- e(1)은 해당 애니메이션 시작, e(0)은 종료를 OEM에 알린다.
+  mode=0,e(1) → animation=1,status=1 방송
+  mode=1,e(1) → animation=2,status=1 방송
+  기존 automotive-service의 ModeManagerService 수신부와도 대조했다.
+- 실제 APK Manifest는 기존에 해석한 stock reference와 바이트가 동일하다.
+  package=com.mobis.welcome, sharedUserId=android.uid.system이며 별도 process
+  이름을 지정하지 않는다. APK 리소스만 바꾸는 테마는 이 ODEX 훅과 별개다.
+
+동작
+- 정확한 com.mobis.welcome 패키지/프로세스, UID1000에서 위 메서드만 관찰한다.
+- Goodbye 시작이면 OFF, Welcome 시작이면 ON을 기존 전원 송신 큐에 전달한다.
+  animation 종료, 알 수 없는 mode/status, 앱 시작, 화면 끄기, onPause는 전원
+  판단으로 사용하지 않는다. 일반 방송 수신기를 추가하지 않는다.
+- OEM 콜백에서는 메모리 큐만 갱신한다. 로컬 IPC·파일 저장·AP 종료는 별도
+  작업 경로가 담당한다. 원본 영상, 방송, 반환값이나 예외를 바꾸지 않는다.
+- command2는 Welcome 프로세스의 UID/PID 인증을 거친다. DiPO command1의
+  기존 권한을 넓히지 않는다. 부팅 ID/이벤트 시각과 기존 OFF latch를 사용한다.
+- Goodbye OFF로 AP를 내린 뒤, Welcome ON으로 AP와 Provider의 접속 준비
+  상태를 함께 복귀시킨다. 오래된 ON 관측이 새로운 OFF를 덮지 못하게 한다.
+- 이 기능은 이 패키지가 만든 AP/무선 연결을 종료하는 기능이다. USB 포트의
+  물리적인 5V 차단이나 동글 표시등 소등을 보장하지 않는다.
+
+검증/로그
+- USB_CP_ANIMATION_POWER event=ready|unavailable|welcome_start|goodbye_start|read_failed
+- USB_CP_POWER ... source=WELCOME: 큐에 들어간 뒤 delivered/superseded/retry 확인.
+- CP_POWER ... source=WELCOME: root Provider의 처리 결과.
+- AP_POWER_DECISION, AP_EVENT 기록: 실제 AP 종료/복귀 결정과 상태.
+  시작 hook 기록만으로 물리적인 USB 전원 차단 성공이라고 판단하지 않는다.
+- 58개 hook 검사: 정확한 앱/UID, Welcome/Goodbye 시작/종료, 잘못된 입력,
+  원본 호출/반환/예외 보존, disabled 상태, 실패 로그 제한.
+- 신규/기존 맵 병합, 다른 ODEX 해시 거부, 로그 USB roundtrip 통과.
+- 실제 차량에서 이번 hook의 Goodbye→AP 종료→Welcome 재연결은 설치 후
+  확인해야 한다. API/ODEX 정적 확인과 실차 성공은 구분한다.
+
+배포물
+welcome.json의 메서드 정의와 대상 ODEX 해시만 배포한다. 수집한 순정 APK,
+ODEX, 디스어셈블 결과를 배포 ZIP에 포함하지 않는다. 기존 테마 ZIP이나
+영상 교체 패키지를 설치할 필요가 없다.
+
+이전 POWER-LIFECYCLE 문서의 ‘실행 WelcomeGoodbye 코드 없음’은 당시 상태이다.
+v1.0.15에서는 실제 실행 파일을 새로 확보하여 그 제약을 해소했다.

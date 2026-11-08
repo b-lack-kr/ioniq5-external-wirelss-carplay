@@ -159,5 +159,365 @@
     "params": [],
     "ret": "boolean",
     "static": false
+  },
+  "dipo.location": {
+    "class": "com.daudio.app.dipo.h.f"
+  },
+  "dipo.location.start": {
+    "method": "b",
+    "params": [
+      "com.tcc.iap2.Iap2NotiMsg"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.location.stop": {
+    "method": "kt",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.location.sentence": {
+    "method": "an",
+    "params": [
+      "java.lang.String"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.location_speed": {
+    "class": "com.daudio.app.dipo.h.d"
+  },
+  "dipo.location_speed.changed": {
+    "method": "onVehicleSpeedChanged",
+    "params": [
+      "int"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.location_nmea": {
+    "class": "com.daudio.app.dipo.h.e"
+  },
+  "dipo.location_nmea.received": {
+    "method": "onNmeaReceived",
+    "params": [
+      "long",
+      "java.lang.String"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.iap2_proxy.send_location": {
+    "method": "Iap2SvcSendLocationData",
+    "params": [
+      "com.tcc.iap2.Iap2LocationMsg"
+    ],
+    "ret": "boolean",
+    "static": false
+  },
+  "dipo.carplay.audio_stream_start": {
+    "method": "onAudioStreamStart",
+    "params": [
+      "int",
+      "int",
+      "int"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.carplay.audio_stream_stop": {
+    "method": "onAudioStreamStop",
+    "params": [
+      "int"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.session_listener.audio_stream_start": {
+    "method": "onAudioStreamStart",
+    "params": [
+      "com.daudio.app.dipo.telechips.CarPlayAudioStreamType",
+      "com.daudio.app.dipo.telechips.CarPlayAudioType",
+      "int"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.session_listener.audio_stream_stop": {
+    "method": "onAudioStreamStop",
+    "params": [
+      "com.daudio.app.dipo.telechips.CarPlayAudioStreamType"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.session_listener.duck": {
+    "method": "aI",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.session_listener.unduck": {
+    "method": "aJ",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.micom_listener": {
+    "class": "com.daudio.app.dipo.service.aj"
+  },
+  "dipo.micom_listener.status_changed": {
+    "method": "onStatusChanged",
+    "params": [
+      "int",
+      "com.hkmc.media.MicomAudioStatus"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.key_listener": {
+    "class": "com.daudio.app.dipo.service.v"
+  },
+  "dipo.key_listener.all_keys": {
+    "method": "onAllKeyForService",
+    "params": [
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "boolean"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.audio_owner": {
+    "class": "com.daudio.app.dipo.service.DipoService"
+  },
+  "dipo.audio_state": {
+    "class": "com.daudio.app.dipo.service.i"
+  },
+  "dipo.session_listener.audio_owner": {
+    "field": "R",
+    "type": "com.daudio.app.dipo.service.DipoService",
+    "static": false
+  },
+  "dipo.audio_owner.music_started": {
+    "field": "hk",
+    "type": "boolean",
+    "static": false
+  },
+  "dipo.audio_owner.duck_status": {
+    "field": "iY",
+    "type": "int",
+    "static": false
+  },
+  "dipo.audio_owner.alt_status": {
+    "field": "iZ",
+    "type": "int",
+    "static": false
+  },
+  "dipo.audio_owner.start_music": {
+    "method": "eL",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.audio_owner.micom": {
+    "method": "fK",
+    "params": [],
+    "ret": "com.hkmc.media.MicomAudioManager",
+    "static": false
+  },
+  "dipo.audio_owner.state": {
+    "method": "fM",
+    "params": [],
+    "ret": "com.daudio.app.dipo.service.i",
+    "static": false
+  },
+  "dipo.audio_owner.active": {
+    "method": "er",
+    "params": [],
+    "ret": "boolean",
+    "static": false
+  },
+  "dipo.audio_owner.speech_active": {
+    "method": "ew",
+    "params": [],
+    "ret": "boolean",
+    "static": false
+  },
+  "dipo.audio_owner.telematics": {
+    "method": "fX",
+    "params": [],
+    "ret": "boolean",
+    "static": false
+  },
+  "dipo.audio_owner.tmu_call": {
+    "method": "cN",
+    "params": [],
+    "ret": "boolean",
+    "static": false
+  },
+  "dipo.audio_owner.power_off": {
+    "method": "isPowerOff",
+    "params": [],
+    "ret": "boolean",
+    "static": false
+  },
+  "dipo.audio_state.phone_call": {
+    "method": "getPhoneCall",
+    "params": [],
+    "ret": "int",
+    "static": false
+  },
+  "dipo.audio_state.speech": {
+    "method": "getSpeech",
+    "params": [],
+    "ret": "int",
+    "static": false
+  },
+  "dipo.mode_power_listener": {
+    "class": "com.daudio.app.dipo.service.bb"
+  },
+  "dipo.mode_power_listener.power_off": {
+    "method": "onPowerOff",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.mode_power_listener.power_on": {
+    "method": "onPowerOn",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.carplay.screen_started": {
+    "method": "onScreenStarted",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.carplay.screen_stopped": {
+    "method": "onScreenStopped",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.carplay.screen_timeout": {
+    "method": "onScreenTimeout",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.carplay.decode_failure": {
+    "method": "onNotifyDecodeFailure",
+    "params": [
+      "int"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.carplay.video_mode_changed": {
+    "method": "onModeChanged",
+    "params": [
+      "int",
+      "int",
+      "int",
+      "int",
+      "int",
+      "int"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.carplay.show_display": {
+    "method": "showDisplay",
+    "params": [
+      "android.view.Surface"
+    ],
+    "ret": "com.daudio.app.dipo.telechips.CarPlayReturn",
+    "static": false
+  },
+  "dipo.carplay.hide_display": {
+    "method": "hideDisplay",
+    "params": [],
+    "ret": "com.daudio.app.dipo.telechips.CarPlayReturn",
+    "static": false
+  },
+  "dipo.video_activity": {
+    "class": "com.daudio.app.dipo.ui.DipoActivity"
+  },
+  "dipo.video_activity.resume": {
+    "method": "onResume",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.video_activity.pause": {
+    "method": "onPause",
+    "params": [],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.video_surface": {
+    "class": "com.daudio.app.dipo.ui.e"
+  },
+  "dipo.video_surface.created": {
+    "method": "surfaceCreated",
+    "params": [
+      "android.view.SurfaceHolder"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.video_surface.changed": {
+    "method": "surfaceChanged",
+    "params": [
+      "android.view.SurfaceHolder",
+      "int",
+      "int",
+      "int"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.video_surface.destroyed": {
+    "method": "surfaceDestroyed",
+    "params": [
+      "android.view.SurfaceHolder"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.carplay.native_force_key_frame": {
+    "method": "TccCarPlayNativeMethod_ForceKeyFrame",
+    "params": [],
+    "ret": "int",
+    "static": false
+  },
+  "dipo.location.make_pascd": {
+    "method": "kw",
+    "params": [],
+    "ret": "java.lang.String",
+    "static": false
+  },
+  "dipo.location.rmc_requested": {
+    "field": "ri",
+    "type": "boolean",
+    "static": false
+  },
+  "dipo.location.pascd_requested": {
+    "field": "rj",
+    "type": "boolean",
+    "static": false
+  },
+  "dipo.location_speed.manager": {
+    "field": "dL",
+    "type": "com.daudio.app.dipo.h.f",
+    "static": false
   }
 }

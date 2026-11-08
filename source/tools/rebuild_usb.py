@@ -18,7 +18,7 @@ def main():
     p.add_argument('--source-root',type=Path,default=Path(__file__).resolve().parents[1])
     for k in ('java-home','android-jar','d8','out','sign-key'):
         p.add_argument('--'+k,type=Path,required=True)
-    p.add_argument('--mute-usb',type=Path,help='Reuse the signed, vehicle-verified Mute Pause 1.1.0 USB archive')
+    p.add_argument('--mute-usb',type=Path,help='Copy an existing standalone mute USB archive as a separate output; never bundle it into CarPlay')
     p.add_argument('--generate-key',action='store_true')
     a=p.parse_args(); root=a.source_root.resolve(); out=a.out.resolve(); key=a.sign_key.resolve()
     if out==root or root in out.parents or out in root.parents or key==out or root in key.parents or out in key.parents:
@@ -46,8 +46,9 @@ def main():
     owner=json.loads((out/'mod/payload/META-HMGAPI/manifest.json').read_text())['uuid']
     run(sys.executable,root/'installer/build_installer.py','--mod',out/'mod/payload','--setup-jar',out/'support/setup.jar',
         '--maps',root/'maps','--target',root/'target/TARGET.md5','--vendor-dir',out/'vendor/build','--out',out/'cp-usb','--uuid',owner)
-    zipout=out/'NEEV_260902_CarPlay_1.0.1_USB.zip'
-    run(sys.executable,root/'release/build.py','--installer',out/'cp-usb','--mute',a.mute_usb.resolve() if a.mute_usb else out/'support/mute-usb.zip','--owner',owner,'--out',zipout)
+    zipout=out/'NEEV_260902_CarPlay_1.0.2_USB.zip'
+    run(sys.executable,root/'release/build.py','--installer',out/'cp-usb','--owner',owner,'--out',zipout)
+    shutil.copyfile(a.mute_usb.resolve() if a.mute_usb else out/'support/mute-usb.zip',out/'IONIQ5_CarPlay_Mute_Pause_1.1.0_USB.zip')
     run(sys.executable,root/'tools/audit_archive.py','--profile','usb',zipout)
     print(f'Finished: {zipout}')
 

@@ -1,0 +1,1027 @@
+// Modified by HMG-Seogaemo: removed HMG-API projection event integration; stock-format turns (AaGuidance).
+// Adapted from HMG-Seogaemo v0.1.47, commit 7616e43f669916445f151a7aeb279b32ea09cd4b.
+// https://github.com/seogaemo/hmg-seogaemo (AGPL-3.0-or-later).
+// NEEV: preserve HMG-API owner/focus gates, monotonic timers and private-data-free evidence.
+package hmgapi.mods.wireless.gpm;
+
+import android.content.Context;
+import android.os.Handler;
+import android.os.SystemClock;
+import android.text.format.DateFormat;
+import android.util.Log;
+
+import java.util.Calendar;
+
+import hmgapi.hook.Car;
+import hmgapi.hook.Cluster;
+
+/**
+ * Android Auto turn-by-turn on the cluster and HUD, for one Android Auto connection.
+ * GPM has its own (GpmNaviTBTManager), but makes it only when stepofspec is 999 or
+ * more, and that one also claims the cluster (alive + status), which these cars never
+ * give back. This is the turn-by-turn build's manager in Java, fed by the AA library's
+ * callbacks (gpm.navigation_status.*) and sending through HMG-API's Cluster API: turn,
+ * distance, HUD turn list and distance, lanes, the next turns, remaining distance and
+ * arrival time, destination name. It never sends alive or operation status.
+ *
+ * The AA library (the Wireless mod's library delta) packs more than stock into the
+ * callbacks: next-turn events 32 (destination name; number = destination point),
+ * 33 (debug dump), 34 (lanes, hex string), 64..66 (turns ahead: road, side, angle,
+ * number = event | exit << 8), 67 (end of the turns ahead, number = how many); and
+ * distance flags 0x200 (a turn ahead, index in bits 10-11) and 0x100 (remaining trip:
+ * meters, seconds, unit, 0x800 + point << 12).
+ *
+ * Near a maneuver the main display gets the stock Navigation.DisplayType format (AaGuidance,
+ * the same policy as CarPlay's): the cluster AR view, the HUD hologram and the bar beside the
+ * AR view (the owner-checked ApproachSink). The HUD turn list keeps the projection icons.
+ *
+ * Everything runs on one thread (the handler's), in the order the callbacks came.
+ */
+final class AaTurns {
+    interface Owner {boolean active();boolean release();}
+    Owner owner;
+    private boolean releasing;
+    /** Recheck ownership for each output, without holding the hook-state lock across Binder. */
+    final class Output {
+        final Cluster target;Output(Cluster target){this.target=target;}
+        boolean allowed(){return owner==null||(releasing?owner.release():owner.active());}
+        void tbtInfo(int a,int b,float c,float d,int e,int f,int g,int h,int i){if(allowed())target.tbtInfo(a,b,c,d,e,f,g,h,i);}
+        void tbtSubInfo(float a,int b,int c,int d,int e,int f,int g,float h,int i,int j){if(allowed())target.tbtSubInfo(a,b,c,d,e,f,g,h,i,j);}
+        void tbtSubInfo2C(int a,int b,int c,int d,int e,int f,int g,int h,int i){if(allowed())target.tbtSubInfo2C(a,b,c,d,e,f,g,h,i);}
+        void crossroadName(String name){if(allowed())target.crossroadName(name);}
+        void destinationName(int type,String name){if(allowed())target.destinationName(type,name);}
+        void laneInfo(byte[] bytes){if(allowed())target.laneInfo(bytes);}
+        void turnListNew(byte[] bytes){if(allowed())target.turnListNew(bytes);}
+        boolean remainDis(int a,int b,int c,int d){return allowed()&&laneDistance!=null&&laneDistance.send(a,b,c,d);}
+        void turnList(Cluster.Turn[] turns){if(allowed())target.turnList(turns);}
+    }
+    interface ApproachSink {void update(boolean active,int bar);}
+    interface TraceSink {void event(String line);}
+    ApproachSink approach;
+    TraceSink traceSink;
+    LaneDistanceWriter laneDistance;
+    boolean standardTurns, ended, closeApproach;
+    /** Shared AR switch uses KOR ordinary300+50 baseline; highway600 remains approximate. */
+    void setCloseApproach(boolean enabled){closeApproach=enabled;}
+    int approachWindow(){return AaGuidance.window(event);}
+    boolean outputsAllowed(){return owner==null||owner.active();}
+
+    // AA protocol numbers (Protos.NavigationNextTurnEvent)
+    static final int UNKNOWN = 0, DEPART = 1, NAME_CHANGE = 2, SLIGHT_TURN = 3, TURN = 4, SHARP_TURN = 5, U_TURN = 6,
+            ON_RAMP = 7, OFF_RAMP = 8, FORK = 9, MERGE = 10, ROUNDABOUT_ENTER = 11, ROUNDABOUT_EXIT = 12,
+            ROUNDABOUT_ENTER_AND_EXIT = 13, STRAIGHT = 14, FERRY_BOAT = 16, FERRY_TRAIN = 17, DESTINATION = 19;
+    static final int LEFT = 1, RIGHT = 2, UNSPECIFIED = 3;
+    static final int METERS = 1, KILOMETERS = 2, KILOMETERS_P1 = 3, MILES = 4, MILES_P1 = 5, FEET = 6, YARDS = 7;
+    // the library's extra events and flags
+    static final int EV_DEST_NAME = 32, EV_DUMP = 33, EV_LANES = 34, EV_AHEAD = 64, EV_AHEAD_END = 67;
+    static final int FLAG_TRIP = 0x100, FLAG_AHEAD = 0x200, FLAG_POINT = 0x800;
+    static final byte HUD_LIST = (byte) 0xF2, LANES = (byte) 0xF1;
+
+    final Context context;
+    final Output cluster;
+    final Handler handler;
+    final Runnable tick = new Runnable() {
+        @Override
+        public void run() {
+            try { unitTick(); } catch (Throwable failure) { forget(); }
+        }
+    };
+    /** sends the lane frame again: the car's own navigation calls the cluster every 0.5-0.75 s, and a frame sent once is aged out */
+    final Runnable laneTick = new Runnable() {
+        @Override
+        public void run() {
+            try { refreshLanes(); } catch (Throwable failure) { forget(); }
+        }
+    };
+    /**
+     * The heartbeat while a route is live: like CarPlay's CpTurns.refresh it sends the last turn again when
+     * the phone has been quiet for a moment (a car stopped at a light gets no new distances, and the cluster
+     * and HUD age stale data out), keeps the HUD turn list coming, and ends a route the phone stopped
+     * talking about without an end status (guide lost).
+     */
+    final Runnable beat = new Runnable() {
+        @Override
+        public void run() {
+            beating = false;
+            try { heartbeat(); } catch (Throwable failure) { forget(); }
+        }
+    };
+    static final long LANE_MS = 750, LANE_DIST_RESEND_MS = 2000;
+    static final long BEAT_MS = 1000, SEND_MS = 900, HUD_RESEND_MS = 2000;
+    /**
+     * No library callback of any kind (turn, distance, trip, lanes, dump, status) for this long while a route is
+     * live and the car's navigation has not taken over: the guidance goes. The phone's own end status normally
+     * comes first, and the connection ending (end()) clears too; this is for a phone app that stops without
+     * either. Long on purpose: a car waiting at a light sends no new distance, and 60 s (the HMG Leafia Plus
+     * r8.2 value) is shorter than a long red light; the developer trace ("quiet ... ms") records the real gaps.
+     */
+    static final long GUIDE_LOST_MS = 120000;
+    /** developer trace: a gap this long between callbacks is logged, the summary line comes every TRACE_SUMMARY_MS, a route logs at most TRACE_LINES lines */
+    static final long QUIET_LOG_MS = 5000, TRACE_SUMMARY_MS = 5000, FLIP_MS = 10000;
+    static final int TRACE_LINES = 600;
+    static final int K_TURN = 0, K_DIST = 1, K_STATUS = 2, K_LANES = 3, K_DUMP = 4;
+    static final String[] KINDS = { "turn", "distance", "status", "lanes", "dump" };
+
+    /** the clock (milliseconds); the host test freezes it (frozen) and moves it with skew */
+    long skew;
+    boolean frozen;
+    /** the heartbeat is scheduled; the last library callback; the last turn sent; the HUD turn list sent last and when */
+    boolean beating;
+    long lastIn, lastSendAt;
+    byte[] lastHud;
+    long hudAt;
+    /** the guide-lost watchdog cleared a route that may still be live: any callback brings it back; the car's navigation has the cluster */
+    boolean lost, nativeFocus;
+    // Bounded numeric trace; the host controls whether a development sink is attached.
+    int traceLeft, traceExtra;
+    long summaryAt, maxGap, quietLogged;
+    final int[] calls = new int[KINDS.length];
+    int flips, lastSig = -1;
+    final int[] sigs = new int[4];
+    final long[] sigAt = new long[4];
+
+    // the next turn
+    int event, turnSide, turnAngle, turnNumber, displayType, direction, unit;
+    String road;
+    float distance = -1f;
+    boolean navLive;
+    /** metres to the next turn, -1 until a distance for this turn came */
+    int meters = -1;
+    /** the phone is rerouting: the cluster shows RECALC_ROUTE 10 until a turn, active status or REROUTE_HOLD distances */
+    boolean rerouting;
+    int rerouteHeld;
+    /** distance updates (about one a second) held while rerouting before the turn shows again */
+    static final int REROUTE_HOLD = 5;
+    /** the approach bar sent last (0..100), -1 when off */
+    int approachBar = -1;
+    // destination and the remaining trip
+    String destName;
+    int estPoint;
+    int tripMeters = -1, tripSeconds = -1, tripUnit, tripGen, sentGen;
+    int lastUsm = -2;
+    // HUD turn list (what was sent last)
+    int hudType = -1, hudNext;
+    boolean hudFresh;
+    String hudRoad, laneKey;
+    /** the lane frame to show while a route is live (null: no lanes), and the lane distance box last sent (whole, unit, tenths) and when */
+    byte[] lastLane;
+    int[] laneDist;
+    long laneDistAt;
+    // the turns ahead (index 0..2)
+    final String[] aheadName = new String[3];
+    final int[] aheadEv = new int[3], aheadSide = new int[3], aheadAng = new int[3], aheadExit = new int[3];
+    final int[] aheadMeters = new int[3], aheadUnit = new int[3], aheadE3 = new int[3];
+    final boolean[] aheadOk = new boolean[3];
+
+    AaTurns(Context context, Cluster cluster, Handler handler) {
+        this.context = context;
+        this.cluster = new Output(cluster);
+        this.laneDistance = LaneDistanceWriter.create(context);
+        this.handler = handler;
+    }
+
+    long now() {
+        return (frozen ? 0L : SystemClock.elapsedRealtime()) + skew;
+    }
+
+    // ---- from the AA library
+
+    void nextTurn(String str, int side, int ev, int angle, int number) {
+        touch(ev == EV_DUMP ? K_DUMP : ev == EV_LANES ? K_LANES : K_TURN);
+        if (ev == EV_DUMP) {
+            hmgapi.hook.ProjectionHooks.navigationDump(str);
+            return;
+        }
+        if (ev == EV_LANES) {
+            sendLanes(str);
+            return;
+        }
+        if (ev == EV_DEST_NAME) {
+            if (str == null || str.length() == 0) {
+                destName = "";
+                sendDestName();
+                destName = null;
+                return;
+            }
+            if (number >= 0) estPoint = number;
+            if (!str.equals(destName)) {
+                destName = str;
+                sendDestName();
+            }
+            return;
+        }
+        if (ev == EV_AHEAD_END) {
+            if (number > 0) sendAhead(Math.min(number, 3));
+            return;
+        }
+        if (ev >= EV_AHEAD && ev < EV_AHEAD_END) {
+            int k = ev - EV_AHEAD;
+            aheadName[k] = str == null ? "" : str;
+            aheadSide[k] = side;
+            aheadAng[k] = angle;
+            aheadEv[k] = number & 0xff;
+            aheadExit[k] = (number >> 8) & 0xff;
+            aheadOk[k] = false;
+            return;
+        }
+        hudFresh = false;
+        nativeFocus = false;
+        boolean first = road == null;
+        // a changed maneuver needs a fresh distance before the approach window opens
+        boolean changed = ev != event || side != turnSide || angle != turnAngle || !String.valueOf(str).equals(String.valueOf(road));
+        if (changed) meters = -1;
+        traceTurn(str, side, ev, angle, changed);
+        rerouting = false;
+        event = ev;
+        road = str;
+        turnSide = side;
+        turnAngle = angle;
+        turnNumber = number;
+        switch (ev) {
+            case DEPART:
+                if (first) {
+                    cluster.destinationName(0, road);
+                    distance = -1f;
+                } else {
+                    cluster.crossroadName(road);
+                    setTurnType(ev, turnSide);
+                }
+                break;
+            case NAME_CHANGE: case SLIGHT_TURN: case TURN: case SHARP_TURN: case STRAIGHT: case MERGE:
+                cluster.crossroadName(road);
+                setTurnType(ev, turnSide);
+                break;
+            case U_TURN:
+                if (side == UNSPECIFIED) turnSide = LEFT;
+                cluster.crossroadName(road);
+                setTurnType(ev, turnSide);
+                break;
+            case ON_RAMP: case OFF_RAMP: case FORK: case FERRY_BOAT:
+                cluster.crossroadName(road);
+                setRampType(ev, turnSide);
+                break;
+            case ROUNDABOUT_EXIT: case ROUNDABOUT_ENTER_AND_EXIT:
+                cluster.crossroadName(road);
+                setRoundaboutType(ev, turnSide, turnAngle);
+                break;
+            case DESTINATION:
+                displayType = 3;
+                break;
+            case UNKNOWN:
+                displayType = 64;
+                break;
+            default:
+                return;   // ROUNDABOUT_ENTER, FERRY_TRAIN: not for the cluster
+        }
+        sendTurn();
+    }
+
+    void nextTurnDistance(int meters, int seconds, int e3, int unitFlags) {
+        touch(K_DIST);
+        if ((unitFlags & FLAG_AHEAD) != 0) {
+            int k = (unitFlags >> 10) & 3;
+            if (k > 2) return;
+            aheadMeters[k] = meters;
+            aheadE3[k] = e3;
+            aheadUnit[k] = unitFlags & 0xff;
+            aheadOk[k] = true;
+            return;
+        }
+        if ((unitFlags & FLAG_TRIP) != 0) {
+            if ((unitFlags & FLAG_POINT) != 0) {
+                int p = (unitFlags >> 12) & 15;
+                estPoint = p > 4 ? 0 : p;
+            }
+            tripMeters = meters;
+            tripSeconds = seconds;
+            tripUnit = unitFlags & 0xff;
+            tripGen++;
+            sendRemain();
+            return;
+        }
+        setDistance(meters, e3, unitFlags);
+        setTurnType(event, turnSide);
+        // never stuck on RECALC_ROUTE when the phone skips the active status and keeps the same turn
+        if (rerouting && ++rerouteHeld >= REROUTE_HOLD) rerouting = false;
+        sendTurn();
+    }
+
+    void status(int s) {
+        touch(K_STATUS);
+        if ((s == 1 || s == 3) && !navLive) { traceLeft = TRACE_LINES; traceExtra = 0; }
+        trace("status " + s, true);
+        if (s == 1 || s == 3) {   // active, rerouting
+            navLive = true;
+            ended = false;
+            lost = false;
+            startBeat();
+            if (s == 1) {
+                rerouting = false;
+                if (lastLane != null) showLanes();
+            } else if (!rerouting) {
+                rerouting = true;
+                rerouteHeld = 0;
+                setApproach(-1);
+                cluster.tbtInfo(10, 0, 0f, 0f, 0, 0, 0, 0, 0);
+            }
+            return;
+        }
+        lost = false;
+        ended = true;
+        clear();
+        resetData();
+    }
+
+    /** The route is over (or taken to be): stop the timers, clear the turn, the remaining trip, the destination and the HUD. */
+    private void clear() {
+        boolean wasLive = navLive;
+        handler.removeCallbacks(tick);
+        handler.removeCallbacks(beat);
+        handler.removeCallbacks(laneTick);
+        beating = false;
+        rerouting = false;
+        destName = null;
+        navLive = false;
+        tripMeters = -1;
+        tripSeconds = -1;
+        estPoint = 0;
+        lastSendAt = 0;
+        if (wasLive) release();
+    }
+
+    /** The car's navigation took over (focus native): forget the turn. */
+    void stop() {
+        nativeFocus = true;
+        lastSendAt = 0;
+        event = 0;
+        road = null;
+        turnSide = 0;
+        turnAngle = 0;
+        turnNumber = 0;
+        unit = 0;
+        meters = -1;
+        displayType = 0;
+        direction = 0;
+        rerouting = false;
+        setApproach(-1);
+        if (lastLane != null || laneDist != null) {
+            forgetLanes();
+            byte[] blank = new byte[81];
+            blank[0] = LANES;
+            cluster.laneInfo(blank);
+        }
+    }
+
+    /** The connection ended: clear what we showed, if a route was on. */
+    void end() {
+        ended = true;
+        handler.removeCallbacks(tick);
+        handler.removeCallbacks(beat);
+        beating = false;
+        lost = false;
+        if (navLive) status(2);
+        forgetLanes();
+        setApproach(-1);
+        resetData();
+    }
+
+    /** Ownership loss: cancel all pending work without clearing the new owner's display. */
+    void forget() {
+        handler.removeCallbacks(tick); handler.removeCallbacks(laneTick); handler.removeCallbacks(beat);
+        beating = false; navLive = false; lost = false; ended = true;
+        setApproach(-1);
+        resetData();
+    }
+
+    private void resetData() {
+        event = turnSide = turnAngle = turnNumber = displayType = direction = unit = 0;
+        road = destName = null; distance = -1f; meters = -1;
+        tripMeters = tripSeconds = -1; tripUnit = tripGen = sentGen = estPoint = 0; lastUsm = -2;
+        hudType = -1; hudNext = 0; hudFresh = false; hudRoad = laneKey = null;
+        lastHud = lastLane = null; laneDist = null; lastSendAt = hudAt = laneDistAt = 0;
+        rerouting = false; rerouteHeld = 0;
+        for (int i=0;i<3;i++) { aheadName[i]=null; aheadEv[i]=aheadSide[i]=aheadAng[i]=aheadExit[i]=0;
+            aheadMeters[i]=aheadE3[i]=-1; aheadUnit[i]=0; aheadOk[i]=false; }
+    }
+
+    // ---- heartbeat, guide-lost watchdog
+
+    private void startBeat() {
+        if (beating) return;
+        beating = true;
+        handler.postDelayed(beat, BEAT_MS);
+    }
+
+    /** one library callback arrived: restarts the quiet clock, and brings back a route the watchdog cleared */
+    private void touch(int kind) {
+        long t = now();
+        if (navLive && lastIn != 0) {
+            long gap = t - lastIn;
+            if (gap > maxGap) maxGap = gap;
+            if (gap >= QUIET_LOG_MS) trace("quiet " + gap + " ms, ended by " + KINDS[kind]);
+        }
+        lastIn = t;
+        quietLogged = 0;
+        calls[kind]++;
+        if (lost && !ended && kind != K_STATUS && outputsAllowed()) {
+            lost = false;
+            navLive = true;
+            startBeat();
+            trace("phone is talking again: guidance back", true);
+        }
+    }
+
+    void heartbeat() {
+        if (!outputsAllowed()) { forget(); return; }
+        if (!navLive) return;
+        long t = now();
+        long quiet = t - lastIn;
+        if (!nativeFocus) {
+            if (quiet >= GUIDE_LOST_MS) {
+                trace("guide lost: nothing from the phone for " + quiet + " ms", true);
+                lost = true;
+                clear();
+                return;
+            }
+            if (!rerouting && lastSendAt != 0 && t - lastSendAt >= SEND_MS) sendTurn();
+            if (!rerouting && lastHud != null && t - hudAt >= HUD_RESEND_MS) {
+                cluster.turnListNew(lastHud);
+                hudAt = t;
+            }
+        }
+        for (long mark = 30000; mark < GUIDE_LOST_MS; mark += 30000) {
+            if (quiet >= mark && quietLogged < mark) {
+                quietLogged = mark;
+                trace("quiet for " + quiet + " ms, the route is still live");
+            }
+        }
+        if (t - summaryAt >= TRACE_SUMMARY_MS && devOn()) {
+            summaryAt = t;
+            trace("state ev=" + event + " side=" + turnSide + " m=" + meters + " rerouting=" + rerouting + " focus=" + (nativeFocus ? "car" : "phone")
+                    + " calls turn/dist/status/lanes/dump=" + calls[K_TURN] + "/" + calls[K_DIST] + "/" + calls[K_STATUS] + "/" + calls[K_LANES] + "/" + calls[K_DUMP]
+                    + " quiet=" + quiet + " maxGap=" + maxGap);
+        }
+        startBeat();
+    }
+
+    // ---- developer trace
+
+    /** Enabled only when the host binds its development-log sink. */
+    private boolean devOn() { return traceSink != null; }
+
+    /** logcat AATRACE: transitions only (a turn changing, a gap in the callbacks, a status, a flip), a summary every 5 s; at most TRACE_LINES per route, and as many again of the rare important ones */
+    void trace(String m) {
+        trace(m, false);
+    }
+
+    /** important: status, flip and guide-lost lines (rare) go out even when the route used up its lines */
+    void trace(String m, boolean important) {
+        if (!devOn()) return;
+        if (traceLeft > 0) traceLeft--;
+        else if (!important || ++traceExtra > TRACE_LINES) return;
+        try { traceSink.event("USB_CP_AA_TRACE " + m); } catch (RuntimeException ignored) {}
+    }
+
+    /**
+     * A turn event. A turn that comes back after another one within FLIP_MS is a "flip": the feed alternating
+     * between two maneuvers (the HMG Leafia Plus r8.2 arbitrates this; here it is only counted, to see if the
+     * library's feed does it at all). Called for every turn event, so a turn that stays keeps its time fresh.
+     */
+    private void traceTurn(String road, int side, int ev, int angle, boolean changed) {
+        long t = now();
+        int sig = ev << 8 | side;
+        boolean seen = false;
+        for (int k = 0; k < sigs.length; k++) if (sigAt[k] != 0 && sigs[k] == sig && t - sigAt[k] <= FLIP_MS) seen = true;
+        if (sig != lastSig && seen) {
+            flips++;
+            trace("flip " + flips + ": ev=" + ev + " side=" + side + " is back after another turn within " + FLIP_MS + " ms", true);
+        }
+        int slot = 0;
+        for (int k = 1; k < sigs.length; k++) if (sigAt[k] < sigAt[slot]) slot = k;
+        for (int k = 0; k < sigs.length; k++) if (sigAt[k] != 0 && sigs[k] == sig) slot = k;
+        sigs[slot] = sig;
+        sigAt[slot] = t;
+        lastSig = sig;
+        if (changed) trace("turn ev=" + ev + " side=" + side + " angle=" + angle);
+    }
+
+    // ---- the next turn
+
+    void sendTurn() {
+        if (!navLive || rerouting || !outputsAllowed()) return;
+        int bar = 32, barErr = 0;
+        int[] stock = null;
+        if (distance < 0f) {
+            bar = 254;
+            barErr = -2;
+            if (displayType < 64) displayType = 2;
+        } else if (standardTurns && meters >= 0 && meters <= approachWindow()) {
+            stock = AaGuidance.stock(event, turnSide, turnAngle);
+        }
+        lastSendAt = now();
+        if (stock == null) {
+            setApproach(-1);
+            cluster.tbtInfo(displayType, 65535, direction, distance, 0, 0, unit, bar, barErr);
+        } else {
+            setApproach(AaGuidance.bar(meters, approachWindow()));
+            // stock types draw side streets from sideStreet (65535: a road every way); stock sends 0
+            cluster.tbtInfo(stock[0], 0, stock[1], distance, 0, 0, unit, 0, 0);
+        }
+        sendHudList();
+        sendHudDistance();
+        sendLaneDist();
+    }
+
+    /** The approach bar: 0..100 shows it (renewed while on), -1 gives the stock bar back. */
+    void setApproach(int bar) {
+        if (bar >= 0 && (!standardTurns || !outputsAllowed())) bar = -1;
+        if (bar == approachBar) return;
+        approachBar = bar;
+        try { if (approach != null) approach.update(bar >= 0, Math.max(0, bar)); }
+        catch (RuntimeException unavailable) { approachBar = -1; }
+    }
+
+    /** Distance to the next turn, in the owner's unit (Settings) where the phone's differs. */
+    void setDistance(int meters, int e3, int u) {
+        this.meters = meters;
+        int usm = Car.distanceUnit(context);
+        if (meters >= 0) {
+            if (usm == Car.DISTANCE_KM) {
+                if (u >= MILES) {
+                    if (meters < 1000) {
+                        u = METERS;
+                    } else {
+                        e3 = meters;
+                        u = KILOMETERS;
+                    }
+                }
+            } else if (usm == Car.DISTANCE_MILES) {
+                if (meters >= 161) {
+                    if (u < MILES) {
+                        e3 = meters * 1000 / 1609;
+                        u = MILES_P1;
+                    }
+                } else if (u != FEET && u != YARDS) {
+                    e3 = meters * 3281;
+                    u = FEET;
+                }
+            }
+        }
+        distance = (float) (e3 / 1000.0d);
+        if (u == METERS) {
+            if (meters >= 1000) {
+                distance = (float) (meters / 1000.0d);
+                unit = Cluster.UNIT_KM;
+            } else {
+                distance = meters;
+                unit = Cluster.UNIT_M;
+            }
+        } else if (u == KILOMETERS || u == KILOMETERS_P1) {
+            unit = Cluster.UNIT_KM;
+        } else if (u == MILES || u == MILES_P1) {
+            unit = Cluster.UNIT_MI;
+        } else if (u == FEET) {
+            unit = Cluster.UNIT_FT;
+        } else if (u == YARDS) {
+            unit = Cluster.UNIT_YD;
+        } else {
+            unit = 15;
+        }
+    }
+
+    void setTurnType(int ev, int side) {
+        switch (ev) {
+            case STRAIGHT: case MERGE:
+                displayType = 65;
+                direction = 0;
+                break;
+            case SLIGHT_TURN:
+                set(side, 66, 30, 71, 330);
+                break;
+            case TURN:
+                set(side, 67, 90, 70, 270);
+                break;
+            case SHARP_TURN:
+                set(side, 68, 135, 69, 225);
+                break;
+            case U_TURN:
+                displayType = side == RIGHT ? 73 : 72;
+                direction = 270;
+                break;
+            case NAME_CHANGE:
+                if (side == RIGHT || side == LEFT) {
+                    set(side, 67, 90, 70, 270);
+                } else {
+                    displayType = 65;
+                    direction = 0;
+                }
+                break;
+            default:
+                break;   // ramps, roundabouts, destination: set by their own
+        }
+    }
+
+    /** right type/direction, left type/direction, otherwise 64 (unknown) straight */
+    private void set(int side, int rType, int rDir, int lType, int lDir) {
+        if (side == RIGHT) {
+            displayType = rType;
+            direction = rDir;
+        } else if (side == LEFT) {
+            displayType = lType;
+            direction = lDir;
+        } else {
+            displayType = 64;
+            direction = 0;
+        }
+    }
+
+    void setRampType(int ev, int side) {
+        if (ev == ON_RAMP) {
+            if (side == RIGHT) {
+                displayType = 173;
+                direction = 30;
+            } else if (side == LEFT) {
+                displayType = 174;
+                direction = 330;
+            } else {
+                displayType = 172;
+                direction = 0;
+            }
+        } else if (ev == OFF_RAMP) {
+            if (side == RIGHT) {
+                displayType = 81;
+                direction = 30;
+            } else if (side == LEFT) {
+                displayType = 82;
+                direction = 330;
+            } else {
+                displayType = 86;
+                direction = 0;
+            }
+        } else if (ev == FORK) {
+            if (side == RIGHT) displayType = 173;
+            else if (side == LEFT) displayType = 174;
+            direction = 0;
+        } else if (ev == FERRY_BOAT) {
+            displayType = 176;
+            direction = 0;
+        }
+    }
+
+    /** Roundabouts: the exit's angle picks the icon (the cluster draws them for right-hand traffic). */
+    void setRoundaboutType(int ev, int side, int a) {
+        if (ev == ROUNDABOUT_EXIT) {
+            if (side == RIGHT) {
+                displayType = 32;
+            } else if (side == LEFT) {
+                displayType = 33;
+            } else {
+                displayType = 64;
+                direction = 0;
+            }
+            return;
+        }
+        if (a == 180) { displayType = 96; direction = 0; }
+        else if (a >= 135 && a < 180) { displayType = 97; direction = 45; }
+        else if (a >= 90 && a < 135) { displayType = 99; direction = 90; }
+        else if (a >= 45 && a < 90) { displayType = 100; direction = 135; }
+        else if ((a >= 0 && a < 45) || (a > 315 && a <= 360)) { displayType = 102; direction = 180; }
+        else if (a > 270 && a <= 315) { displayType = 103; direction = 225; }
+        else if (a > 225 && a <= 270) { displayType = 105; direction = 270; }
+        else if (a > 180 && a <= 225) { displayType = 106; direction = 315; }
+        else { displayType = 64; direction = 0; }
+    }
+
+    // ---- HUD
+
+    /** The HUD's turn list: this turn's icon, the next one's (if known) and the road name, when one of them changed. */
+    void sendHudList() {
+        int type = displayType;
+        if (type < 64) return;
+        int next = 0;
+        if (aheadOk[0]) {
+            next = aheadType(aheadEv[0], aheadSide[0]);
+            hudFresh = true;
+        } else if (hudFresh) {
+            next = hudNext;
+        }
+        String r = road == null ? "" : road;
+        if (hudType == type && hudNext == next && r.equals(hudRoad)) return;
+        byte[] name;
+        try {
+            name = r.getBytes("UTF-16LE");
+        } catch (java.io.UnsupportedEncodingException e) {
+            return;
+        }
+        int n = Math.min(name.length, 78);
+        byte[] f = new byte[n + 5];
+        f[0] = HUD_LIST;
+        f[1] = (byte) (next != 0 ? 2 : 1);
+        f[2] = (byte) type;
+        f[3] = (byte) next;
+        System.arraycopy(name, 0, f, 5, n);
+        cluster.turnListNew(f);
+        lastHud = f;
+        hudAt = now();
+        hudType = type;
+        hudNext = next;
+        hudRoad = r;
+    }
+
+    /** The HUD's distance: whole number (up to 4095) and tenths for km/mi. */
+    void sendHudDistance() {
+        float d = distance;
+        int u = unit;
+        if (d < 0f || u < 0 || u > 4) return;
+        int whole = Math.min((int) d, 4095);
+        int tenths = 0;
+        if (u == Cluster.UNIT_KM || u == Cluster.UNIT_MI) tenths = Math.max(0, Math.min(9, (int) ((d - whole) * 10f + 0.5f)));
+        cluster.tbtSubInfo2C(u, tenths, whole, 0, 0, 0, 0, 0, 0);
+    }
+
+    void hudBlank() {
+        forgetLanes();
+        cluster.tbtSubInfo2C(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        byte[] lanes = new byte[81];
+        lanes[0] = LANES;
+        cluster.laneInfo(lanes);
+        hudType = -1;
+        hudNext = 0;
+        hudFresh = false;
+        hudRoad = null;
+        lastHud = null;
+        cluster.turnListNew(new byte[] { HUD_LIST });
+        cluster.turnListNew(new byte[] { HUD_LIST });
+    }
+
+    /** Clears the turn, the remaining trip, the destination and the HUD. */
+    void release() {
+        releasing = true;
+        try {
+            setApproach(-1);
+            destName = ""; sendDestName(); destName = null;
+            cluster.tbtInfo(0, 0, 0f, 0f, -1, 0, 0, 0, -1);
+            cluster.tbtSubInfo(0f, -1, 0, 0, 0, 0, 0, 0f, -1, 0);
+            hudBlank();
+        } finally { releasing = false; }
+    }
+
+    void sendDestName() {
+        if (destName != null) cluster.destinationName(0, destName);
+    }
+
+    // ---- lanes: "nn" lane count, then per lane 8 hex digits: the route mask (bit k: arrow slot k is
+    // on the route), then three arrow bytes (direction classes 1..8, 0 unused). The lanes are
+    // drawn as the equivalent CarPlay lanes (CpLaneFrame, never blue: no must-use signal) and the
+    // cluster wants the frame again every 0.75 s.
+
+    void sendLanes(String s) {
+        if (s == null) s = "";
+        if (s.equals(laneKey)) return;
+        if (s.length() != 0 && s.length() < 2) return;
+        int n = 0;
+        if (s.length() >= 2) {
+            n = hexByte(s, 0);
+            if (n < 0 || n > 8) return;
+        }
+        if (s.length() != 0 && s.length() != 2 + n * 8) return;
+        int[][] arrows = new int[n][3];
+        int[] route = new int[n];
+        boolean anyRoute = false;
+        for (int k = 0; k < n; k++) {
+            int at = k * 8 + 2;
+            int b = hexByte(s, at);
+            if (b < 0) return;
+            route[k] = b & 7;
+            for (int j = 0; j < 3; j++) {
+                b = hexByte(s, at + 2 + j * 2);
+                if (b < 0) return;
+                arrows[k][j] = b;
+                if (b < 1 || b > 8) route[k] &= ~(1 << j);   // a route mark needs an arrow
+            }
+            anyRoute |= route[k] != 0;
+        }
+        byte[] f = new byte[81];
+        f[0] = LANES;
+        f[1] = (byte) n;
+        for (int k = 0; k < n; k++) {
+            // the equivalent CarPlay lane: a lane with a highlighted direction is status 1 (good), a lane without one is
+            // status 0 (not good) while another lane is highlighted, and with no highlight anywhere nothing is flagged (status 1)
+            int[] v = CpLaneFrame.lane(arrows[k], route[k], route[k] != 0 || !anyRoute ? 1 : 0);
+            f[k + 3] = (byte) v[0];
+            for (int j = 0; j < 3; j++) f[k * 3 + 19 + j] = (byte) v[1 + j];
+        }
+        trace("lanes count=" + n);
+        laneKey = s;
+        if (n == 0) {
+            forgetLanes();
+            laneKey = s;
+            if (navLive) cluster.laneInfo(f);
+            return;
+        }
+        lastLane = f;
+        if (navLive) showLanes();
+    }
+
+    /** sends the lane frame and the distance beside it, and keeps them coming */
+    void showLanes() {
+        if (!navLive || rerouting || lastLane == null || !outputsAllowed()) return;
+        cluster.laneInfo(lastLane);
+        sendLaneDist();
+        handler.removeCallbacks(laneTick);
+        handler.postDelayed(laneTick, LANE_MS);
+    }
+
+    void refreshLanes() {
+        if (!outputsAllowed()) { forget(); return; }
+        if (lastLane == null || !navLive) return;
+        if (!rerouting) {
+            cluster.laneInfo(lastLane);
+            sendLaneDist();
+        }
+        handler.postDelayed(laneTick, LANE_MS);
+    }
+
+    /** no lanes any more: stop the refresh, drop the frame and give the distance box back */
+    void forgetLanes() {
+        laneKey = "";
+        lastLane = null;
+        handler.removeCallbacks(laneTick);
+        clearLaneDist();
+    }
+
+    /**
+     * The distance to the next maneuver in the box beside the lane strip (updateRemainDis), the same
+     * as CarPlay: an empty box is worse than the next turn's distance (cluster-lane-frame.md 1b).
+     * Sent on change and every LANE_DIST_RESEND_MS. Feet and yards go out as metres.
+     */
+    void sendLaneDist() {
+        if (lastLane == null || distance < 0f) return;
+        float f = distance;
+        int u = unit;
+        if (u < 0 || u > Cluster.UNIT_YD) return;
+        if (u == Cluster.UNIT_FT) {
+            f *= 0.3048f;
+            u = Cluster.UNIT_M;
+        } else if (u == Cluster.UNIT_YD) {
+            f *= 0.9144f;
+            u = Cluster.UNIT_M;
+        }
+        int whole = (int) (f + 0.5f), tenths = 0;
+        if (u == Cluster.UNIT_KM || u == Cluster.UNIT_MI) {
+            int t = (int) (f * 10f + 0.5f);
+            whole = t / 10;
+            tenths = t % 10;
+        }
+        if (whole > 65534) {
+            whole = 65534;
+            tenths = 0;
+        }
+        int[] v = { whole, u, tenths };
+        long now = now();
+        if (laneDist != null && java.util.Arrays.equals(laneDist, v) && now - laneDistAt < LANE_DIST_RESEND_MS) return;
+        if (cluster.remainDis(whole, u, tenths, 0)) { laneDist = v; laneDistAt = now; }
+    }
+
+    void clearLaneDist() {
+        if (laneDist == null) return;
+        if (cluster.remainDis(65535, 15, 15, 0)) laneDist = null;
+    }
+
+    static int hexByte(String s, int at) {
+        if (at + 1 >= s.length()) return -1;
+        int hi = hex(s.charAt(at)), lo = hex(s.charAt(at + 1));
+        return hi < 0 || lo < 0 ? -1 : hi << 4 | lo;
+    }
+
+    static int hex(char c) {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        return -1;
+    }
+
+    // ---- the turns ahead (cluster turn list)
+
+    static int aheadType(int ev, int side) {
+        switch (ev) {
+            case STRAIGHT: case MERGE: return 65;
+            case SLIGHT_TURN: return side == RIGHT ? 66 : side == LEFT ? 71 : 64;
+            case TURN: return side == RIGHT ? 67 : side == LEFT ? 70 : 64;
+            case SHARP_TURN: return side == RIGHT ? 68 : side == LEFT ? 69 : 64;
+            case U_TURN: return side == RIGHT ? 73 : 72;
+            default: return 64;
+        }
+    }
+
+    void sendAhead(int n) {
+        int count = 0;
+        for (int k = 0; k < n; k++) if (aheadOk[k]) count++;
+        if (count == 0) return;
+        int usm = Car.distanceUnit(context);
+        Cluster.Turn[] list = new Cluster.Turn[count];
+        int i = 0;
+        for (int k = 0; k < n && i < count; k++) {
+            if (!aheadOk[k]) continue;
+            Cluster.Turn t = new Cluster.Turn();
+            t.type = aheadType(aheadEv[k], aheadSide[k]);
+            t.direction = Math.max(aheadAng[k], 0);
+            t.traffic = 0;
+            t.no = i + 1;
+            t.name = aheadName[k] == null ? "" : aheadName[k];
+            t.exitNumber = aheadExit[k] == 255 || aheadExit[k] < 0 ? "" : String.valueOf(aheadExit[k]);
+            int m = aheadMeters[k], e3 = aheadE3[k], u = aheadUnit[k];
+            int cu = Cluster.UNIT_M;
+            float d = m;
+            if (e3 >= 0) {
+                if (u == KILOMETERS || u == KILOMETERS_P1) { cu = Cluster.UNIT_KM; d = e3 / 1000f; }
+                else if (u == MILES || u == MILES_P1) { cu = Cluster.UNIT_MI; d = e3 / 1000f; }
+                else if (u == FEET) { cu = Cluster.UNIT_FT; d = e3 / 1000f; }
+                else if (u == YARDS) { cu = Cluster.UNIT_FT; d = e3 / 1000f * 3f; }
+            }
+            if (usm == Car.DISTANCE_KM) {
+                if (m < 1000) { cu = Cluster.UNIT_M; d = m; }
+                else { cu = Cluster.UNIT_KM; d = m / 1000f; }
+            } else if (usm == Car.DISTANCE_MILES) {
+                if (m < 161) { cu = Cluster.UNIT_FT; d = m * 3.28084f; }
+                else { cu = Cluster.UNIT_MI; d = m / 1609f; }
+            }
+            t.distance = Math.max(0f, Math.min(65535f, d));
+            t.unit = cu;
+            list[i++] = t;
+        }
+        cluster.turnList(list);
+        if (aheadOk[0]) {
+            hudNext = aheadType(aheadEv[0], aheadSide[0]);
+            hudFresh = true;
+        }
+        for (int k = 0; k < 3; k++) aheadOk[k] = false;
+    }
+
+    // ---- remaining distance and arrival time
+
+    /** Sends the remaining trip when it changed or the owner changed units; then checks again every 250 ms. */
+    void sendRemain() {
+        if (!navLive || tripMeters < 0) return;
+        if (tripGen == sentGen) {
+            int usm = Car.distanceUnit(context);
+            if (usm == -1 || usm == lastUsm) return;
+        }
+        sentGen = tripGen;
+        int m = tripMeters, u = tripUnit;
+        int usm = Car.distanceUnit(context);
+        lastUsm = usm;
+        if (usm == Car.DISTANCE_KM) u = m < 1000 ? METERS : KILOMETERS;
+        else if (usm == Car.DISTANCE_MILES) u = m < 161 ? FEET : MILES;
+        int whole, tenths = 0, cu;
+        if (u == KILOMETERS || u == KILOMETERS_P1 || (u != MILES && u != MILES_P1 && u != FEET && u != YARDS && m >= 1000)) {
+            whole = m / 1000;
+            tenths = m % 1000 / 100;
+            cu = Cluster.UNIT_KM;
+        } else if (u == MILES || u == MILES_P1) {
+            int t = m * 10 / 1609;
+            tenths = t % 10;
+            whole = t / 10;
+            cu = Cluster.UNIT_MI;
+        } else if (u == FEET) {
+            whole = m * 3281 / 1000;
+            cu = Cluster.UNIT_FT;
+        } else if (u == YARDS) {
+            whole = m * 1094 / 1000;
+            cu = Cluster.UNIT_YD;
+        } else {
+            whole = m;
+            cu = Cluster.UNIT_M;
+        }
+        int hour = -1, minute = -1, timeType = -1, timeFormat = -1;
+        int s = tripSeconds;
+        Calendar c = null;
+        if (s >= 500000000) {   // a clock time (seconds since 1970)
+            c = Calendar.getInstance();
+            c.setTimeInMillis(s * 1000L);
+        } else if (s >= 0 && s <= 604800) {   // seconds from now
+            c = Calendar.getInstance();
+            c.add(Calendar.SECOND, s);
+        }
+        if (c != null) {
+            hour = c.get(Calendar.HOUR_OF_DAY);
+            minute = c.get(Calendar.MINUTE);
+            timeType = 1;
+            timeFormat = context == null || DateFormat.is24HourFormat(context) ? 2 : 1;
+        }
+        cluster.tbtSubInfo(whole + tenths / 10f, 0, cu, hour, minute, timeType, timeFormat, 0f, -1, estPoint);
+        scheduleTick();
+    }
+
+    void scheduleTick() {
+        if (tripMeters < 0) return;
+        handler.removeCallbacks(tick);
+        handler.postDelayed(tick, 250);
+    }
+
+    void unitTick() {
+        if (!outputsAllowed()) { forget(); return; }
+        if (tripMeters < 0) return;
+        sendRemain();
+        scheduleTick();
+    }
+}

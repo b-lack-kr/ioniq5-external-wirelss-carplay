@@ -1,28 +1,48 @@
-NEEV USB CarPlay 1.0.1 소스 빌드
+공개 1.0.2는 내부 1.0.15 본체를 사용합니다. 공개 설치 기록은 public-release-1.0.2이며, 과거 내부 1.0.2와 구분합니다. 이전 CHANGELOG 번호는 내부 개발 기록입니다.
 
-USB 설치용 ZIP과 함께 배포되는 이 소스에는 CarPlay/턴바이턴, AP 실행기, 음소거 추가 모드, 설치·검증 코드, 라이선스와 차종별 지도가 들어 있습니다. maps의 파일은 도로 지도 대신 차량 클래스 및 메서드의 연결과 펌웨어 해시를 기술합니다. 코드를 수정하거나 재배포할 때 실제 배포 바이너리와 일치하는 소스와 고지문을 함께 제공하세요.
+NEEV 260902 USB CarPlay 1.0.15 소스 빌드 / by blackr / 2026-11-08
+
+이 소스는 같은 버전의 USB ZIP에 대응합니다. 변경 내용과 미확인 항목은 docs/CHANGELOG-1.0.15-KO.txt, 이전 버전 기록은 docs/VERSION-HISTORY-KO.txt를 확인하세요. 소스 및 빌드·설치 스크립트는 배포 바이너리와 함께 제공해야 합니다. 원저작자·라이선스는 mod/LICENSE 및 licenses/, docs/THIRD-PARTY-NOTICES.txt에 보존돼 있습니다.
+
+설치·업데이트·동일 버전의 USB 로그 수집과 이전 배포본의 버전 표시 수정은 docs/INSTALL-LIFECYCLE-1.0.15.txt를 확인하세요.
 
 준비물
-Python 3.9 이상, JDK 17, Android SDK Platform 34의 android.jar, D8을 제공하는 R8 JAR, sh를 갖춘 macOS 또는 Linux 환경을 준비합니다. D8 타깃은 Android API 19 / Dalvik 035입니다. upstream/HMG-API-1.0.1에는 이 빌드에 쓰이는 원본 Java 런타임·도구와 컴파일 스텁을 포함했습니다. 차량 펌웨어와 Wi-Fi 드라이버 원본은 빌드에 필요하지 않습니다.
+Python 3.9+, JDK17, Android SDK Platform34 android.jar, D8/R8 JAR, sh.
+Android target은 API19 / Dalvik035입니다. 설치된 HMG-API1.0.1 이상의 runtime을 사용하며 전체 runtime을 교체하지 않습니다.
 
-빌드
-이 ZIP을 작업 디렉터리에 풀고 다음 명령을 실행합니다. 빌드 출력에는 새 로컬 서명 키를 사용합니다. 키 경로는 배포하는 파일과 분리해서 지정하세요. 기존에 쓰는 HMG 저자 키가 있으면 --sign-key로 지정할 수 있습니다.
+빌드 명령
+python3 tools/rebuild_usb.py --java-home /path/to/jdk17 --android-jar /path/to/android.jar --d8 /path/to/r8.jar --out /path/to/empty-output --sign-key /path/outside-source/author.key
 
-python3 tools/rebuild_usb.py --java-home /path/to/jdk-17 --android-jar /path/to/android.jar --d8 /path/to/r8.jar --out /path/to/new-build --sign-key /path/to/own-author.key
+새 저자 키가 필요하면 --generate-key를 추가합니다. 기존 키를 덮어쓰지 않습니다. 서명 키와 출력 폴더는 소스 트리 밖에 두세요. 서명자를 바꾸면 기존 by blackr 설치본을 덮어쓸 권한이 생기지 않으며 새 서명에 맞는 신규 설치 대상으로 사용해야 합니다.
 
-새 키가 필요할 때는 --sign-key /path/to/new-private-dir/author.key와 --generate-key를 함께 지정합니다. 키가 이미 있으면 생성 요청을 중단합니다. 출력 폴더와 키는 소스 폴더 밖을 사용하세요.
+출력
+NEEV_260902_CarPlay_1.0.15_USB.zip
+IONIQ5_CarPlay_Mute_Pause_1.1.0_USB.zip (독립 패키지)
+CarPlay ZIP에는 음소거 패키지가 포함되지 않고 설치 여부도 요구하지 않습니다.
+USB ZIP 전체 내용을 루트에 풉니다. Wi-Fi 드라이버와 helper 입력은 docs/EXTERNAL-INPUTS-KO.txt를 따릅니다. 공개 ZIP은 타인의 드라이버·제조사 APK·순정 라이브러리를 내장하지 않습니다. 이미 인증된 외부 동글 자산이 설치된 차량은 이를 유지합니다.
 
-서명을 바꾸면 ZIP 바이트와 서명자 UUID도 바뀝니다. 새 서명은 기존 공식 모드에 덮어쓸 권한이 없습니다. 개발 빌드의 소유권을 확인할 수 있는 신규 설치 대상으로 사용하세요. 클러스터/HUD, 오디오 출력, 재부팅 후 재연결은 실제 해당 차종에서 검증해야 합니다.
+설치와 기록
+- 신규 설치 또는 인증된 이전 버전: NEMESIS 자동 실행에 동의하면 설치합니다.
+- 동일한 정확한 버전: 재설치하지 않고 USB에 기록을 수집합니다.
+- 1.0.11/1.0.12/1.0.13/1.0.14에서 갱신: 원본 전체 키트와 서명 매니페스트를 고정 해시로 확인하고, 이전 트랜잭션을 보존합니다. 실패 시 이전 버전으로 복구합니다.
+- Uninstall 후 설치도 이전 기록을 검증·보관한 뒤 신규 트랜잭션을 생성합니다.
+- 설치 후 재부팅이 필요합니다. AA Java 디코더와 새 메모리 레시피를 이전 GPM 프로세스와 혼용하지 않습니다.
+- 음소거 및 startup4.3.2는 각각 별도 설치·삭제합니다.
 
-외부 의존성과 라이선스는 docs/THIRD-PARTY-NOTICES.txt, Wi-Fi 입력은 docs/EXTERNAL-INPUTS-KO.txt를 참조하세요. 소스 구성 파일들의 해시는 SOURCE-SHA256SUMS.txt에 있습니다.
+검증
+JAVA_HOME=/path/to/jdk17 를 지정하여 tests/test_maneuvers.py, test_lanes.py, test_junction_bridge.py, test_aa.py, test_history.py, test_welcome_power.py, test_power_lifecycle.py, test_vehicle_speed.py, test_settings_policy.py, test_aux_writer.py, test_native_lane_writer.py, test_raw_lane_observer.py, test_raw_lane_gate.py, test_aux_ownership.py 등을 실행합니다. 이 시험은 실제 제품 소스와 호스트 스텁을 사용하며 차량 성공을 대신하지 않습니다. 현재 CP 시험과 보관된 확장 기능 시험의 구분은 tests/CP-BASELINE-1.0.14.txt를 확인하세요.
+python3 tests/test_joint.py /path/to/output/NEEV_260902_CarPlay_1.0.15_USB.zip
+python3 tools/audit_archive.py --profile usb /path/to/output/NEEV_260902_CarPlay_1.0.15_USB.zip
 
-빌드한 USB의 설치 및 재실행 흐름은 python3 tests/test_joint.py /path/to/new-build/NEEV_260902_CarPlay_1.0.1_USB.zip 으로 로컬에서 시험합니다. 이 테스트는 차량과 NEMESIS 응답을 모의 처리합니다. 실제 동글과 아이폰 연결은 차량에서 따로 시험하세요.
+새 AA 레시피의 조립·메모리 패치 검증은 ARM Thumb를 지원하는 Android NDK clang/llvm-objcopy와 차량에서 직접 읽은 libautoreceiver_infobank.so가 필요합니다. 원본 MD5는48ee793af8b86052503b8c952b034731, SHA256는eff8c509b0534950b5e7eeac9e4505e3ab92eb5e4cace27371c254281baa2840입니다. 이 파일은 배포하지 않습니다. 검증된 레시피 자체는 일반 USB 빌드에 포함돼 있어 순정 바이너리 없이 빌드 가능합니다.
 
-tests/HistoryTest.java는 합성 로그로 실제 Java 수집기의 시간·이벤트 추출과 개인정보 제외를 시험합니다. JDK 17의 javac와 java를 PATH에 두고 비어 있는 테스트 폴더에서 실행하세요. 아래 SRC를 이 소스를 푼 디렉터리의 절대 경로로 지정합니다.
+설치기 회귀는 이전 공식 ZIP fixture가 필요합니다. installer/test_upgrade_115.py는 NEEV_PUBLIC_114_USB 및 이전 버전 fixture를 사용합니다. 1.0.14 ZIP SHA256는 3d78e92c928d745704275cde94006e1eaaef947254c1d0e30329fda048bd10c7입니다. installer/test_upgrade_114.py는 NEEV_PUBLIC_113_USB 및 NEEV_PUBLIC_112_USB 및 과거 체인 fixture들을 사용합니다. 1.0.12 ZIP SHA256는 f9809de66b866592539d4aa489ebb6d3e7fe7e0d00aaabaf9208582e5482f2da입니다. installer/test_upgrade_112.py는 NEEV_PUBLIC_111_USB 및 이전 기록 시험용 NEEV_PUBLIC_110_USB/NEEV_PUBLIC_109_USB를 사용합니다. 1.0.11의 정확한 ZIP SHA256는 34f4f5037c5e622c41a03b61ac8d807a805d5099349239c0a738781aef1f3ca4입니다. 1.0.13 ZIP SHA256는 c6ba250a209dcc33258a80420ba06bf1c72299ae4e82c069d98801308dc9d7b9입니다. 기본 시험 도우미가 사용하는 NEEV_PUBLIC_101_USB 등 각 fixture는 해당 시험의 고정 해시를 확인하세요. fixture가 없으면 해시 검사를 완화하거나 임의 파일로 대체하지 마세요.
 
-SRC=/path/to/extracted-source
-mkdir classes mock-vehicle
-javac --release 8 -d classes "$SRC"/setup/*.java "$SRC"/upstream/HMG-API-1.0.1/core/runtime/java/hmgapi/engine/Json.java "$SRC"/tests/HistoryTest.java
-java -cp classes kr.ioniq5.usbcp.setup.HistoryTest mock-vehicle
+기능 한계
+기본 TBT는 사용자 정상 기준1.0.9의 정책을 유지하고 추천 차선/정션뷰는 별도 입력·출력 작업자로 보강합니다. 1.0.9에서 두 기능이 동작한 것은 아닙니다. CP 원시 메시지 관찰은 bounded async 방식이며 기존 동기식 파서·주기적 화면 재전송·별도 차선 거리 호출을 복귀시키지 않습니다.
+공개 설정은 AR 표시(기본 OFF, CP/AA 공통)와 외부 동글 사용(기본 ON)입니다. 기본 TBT·추천 차선·지원되는 CarPlay 정션뷰는 AR OFF에서도 처리합니다. 일반 회전 AR은 CP/AA 공통300m 기준이며 고속도로·정션 그림의 별도 조건은 유지합니다. 순정 커서도 고정된다는 사용자 확인에 따라 별도 통과 애니메이션을 추가하지 않습니다. docs/AR-STOCK-EVIDENCE-1.0.15.txt를 확인하세요.
+차량 검증 전입니다. 추천/우선 차선은 휴대폰이 실제로 전달한 유효 정보를 사용합니다. 차선 수만으로 범용 정션 그림을 선택하는 기능은 중단했습니다. 물리 USB5V 차단, 모든 교차로 형상은 지원 완료 항목이 아닙니다. GPS 좌표·시각·방향은 유지하고, 요청된 무선 CarPlay RMC 속도 필드는 실제 차량 콜백 값으로 맞춥니다. docs/RMC-VEHICLE-SPEED-1.0.15.txt를 확인하세요.
 
-기본 빌드에는 검증된 패치 레시피를 사용합니다. 인터페이스 분류 자체를 수정하려면 mod/native/classify.S와 mod/native/build_recipe.py를 확인하세요. 이 선택형 레시피 재생성 단계에는 해당 펌웨어에서 직접 구한 일치하는 원본 libCarPlayCoreUtils.so와 ARM Thumb 조립을 지원하는 clang이 필요합니다.
+AA 레시피 재생성
+NDK_BIN=/path/to/ndk/toolchains/llvm/prebuilt/host/bin python3 mod/native/aa/build_recipe.py --output /path/to/regenerated.recipe
+검증 시 NEEV_AA_STOCK와 NDK_BIN, JAVA_HOME을 지정합니다. 고정 base·assembly·provenance는 mod/native/aa/에 있고 실행용 recipes/에는 등록된 레시피만 들어갑니다.

@@ -1,0 +1,39 @@
+CarPlay 1.0.2 / HMG-API compatibility correction (2026-11-05)
+
+The earlier USB installer required the exact text "hmgapid 1.0.1".
+This incorrectly rejected the user's installed HMG-API 1.0.2 before
+the CarPlay transaction started. The bundled Mute Pause 1.1.0 NEMESIS
+wrapper also had an exact-version check.
+
+The installed runtime requirement now matches mod.json: >=1.0.1.
+A canonical stable version, executable presence and daemon response are
+checked. NEMESIS is separately required by this USB installation method.
+Signature, target firmware, hook map, transaction and rollback checks
+remain in place. Passing the version check alone is not a claim that
+an arbitrary future runtime implements every required capability.
+
+Official source comparison: v1.0.1 -> v1.0.2
+- All 26 hook API files are unchanged.
+- All 13 hookpoint catalogues, 62 map files and 78 mod files are unchanged.
+- Engine.java changes its version constant only.
+- NemesisSync.java adds the HMG-API boot-service entry and start script.
+- Signing and the installer-used engine operations are unchanged.
+
+Sources:
+https://github.com/VysseCodes/HMG-API/releases/tag/v1.0.2
+https://github.com/VysseCodes/HMG-API/archive/refs/tags/v1.0.2.zip
+Downloaded source archive SHA256:
+17883ce8cac7b9df18d025331aa4df0c1b22987279e591a04959bace2165933a
+
+The build SDK remains HMG-API 1.0.1 because the hook API is byte-identical.
+This package neither installs nor downgrades HMG-API. The CarPlay audio
+repair, AP, TBT and signed Mute Pause runtime code are unchanged by this
+installer compatibility correction. Actual head-unit installation remains
+a vehicle test; host checks model runtime responses and USB transactions.
+
+Host validation: 36 CarPlay transaction cases, 37 complete USB coordinator
+cases (no skipped legacy fixtures), and 46 mute wrapper/template cases pass.
+The cases include HMG-API 1.0.1/1.0.2, repeated install/restore, malformed or
+older versions, nonresponsive daemons and missing NEMESIS. Build signature
+verification passes; CarPlay runtime files and its signed manifest are
+identical to the preceding audio-repair build (signature regenerated).

@@ -1,4 +1,4 @@
-IONIQ 5 USB CarPlay 1.0.0 for NEEV.KOR.260902, 2026-11-05
+IONIQ 5 USB CarPlay 1.0.2 for NEEV.KOR.260902, 2026-11-08
 HMG-API and the wireless-carplay-aa module by VysseCodes (AGPL-3.0).
 Includes adaptations of reproducepark's IONIQ 5 AA USB observer.
 Contains Leafia-derived in-memory CarPlay patch recipes, as published in
@@ -6,3 +6,50 @@ the HMG-API wireless-carplay-aa module. See the source distribution's notices.
 This local derivative adds a 5 GHz USB access point, mod-specific process
 and interface validation, Korean CarPlay guidance and music metadata.
 Uses separately obtained HKG_5W_USB_Wlan v2.0.2 USB hardware support at runtime.
+
+Version1.0.4 references HMG-API PR75 (AwsomeFox) for native lane ownership
+and standard turn display, and PR100 for reactive CarPlay key-frame requests.
+AA navigation decoding derives from the HMG-API wireless-carplay-aa module.
+Korean Leafia1.0.5.NEEV.KOR.03-r8.2 supplied by the user was a wire-format
+reference; manufacturer APK/ODEX/DEX files are not shipped in this source kit.
+See docs/FEATURE-COVERAGE-1.0.4-KO.txt for the upstream snapshot and disposition.
+
+HMG-Seogaemo v0.1.46 (2026-11-07)
+Repository: https://github.com/seogaemo/hmg-seogaemo
+Pinned commit: 26eeb97e0a745528b438d7a946be5450fadbfd04
+License: GNU AGPL v3; individual source notices retained, including or-later terms.
+CpJunctions, CpJunctionTable and lane guidance/approach-bar adaptations originate
+from HMG-Seogaemo. Modified by blackr for NEEV USB CarPlay 1.0.10 on 2026-11-07.
+The existing external-USB-Wi-Fi transport, HMG-API runtime and audio fixes are retained.
+This distribution does not include HMG-Seogaemo's private vehicle datasets or OEM binaries.
+Corresponding source and build/install scripts are supplied in the matching source archive.
+
+HMG-Seogaemo v0.1.47 (published 2026-11-07 UTC)
+Repository: https://github.com/seogaemo/hmg-seogaemo
+Pinned commit: 7616e43f669916445f151a7aeb279b32ea09cd4b
+Adapted by blackr for NEEV USB CarPlay 1.0.11 on 2026-11-08.
+CP/AA guidance policy, CpLaneFrame, periodic display refresh, AA lane-route/UTF-8
+recipe and their associated assembly/build inputs derive from this release.
+Existing licenses, attribution and applicable AGPL-3.0-or-later terms are retained.
+The matching source includes modified code, recipe build inputs and tests.
+The external 5 GHz AP, vehicle audio routing and installed HMG-API runtime are retained.
+No private upstream datasets, vehicle firmware binaries or road map data are distributed.
+
+Local version 1.0.12 modifications by blackr, 2026-11-08:
+Unified optional CP/AA AR setting, default guidance independent of AR, immediate
+latest OEM speed forwarding, isolated app-part helpers and OEM shutdown arbitration.
+No new upstream release or proprietary firmware binaries are included.
+See the matching CHANGELOG-1.0.12-KO.txt and corresponding source archive.
+
+Local version 1.0.13 by blackr, 2026-11-08:
+Restores the v1.0.9 CarPlay TBT and iAP2 bridge execution path. Later CP raw-lane
+parsing, periodic frame refresh, separate lane-distance and lane-based junction
+selection are inactive in this recovery release. AA improvements and attribution
+remain; see CHANGELOG-1.0.13-KO.txt for precise retained and reverted behavior.
+
+Local version 1.0.14 by blackr, 2026-11-08:
+The user's known-good v1.0.9 covers basic TBT only, not recommended lanes or junction view.
+Retains basic TBT policy while adding a bounded async raw-lane observer and independent
+lane/pattern output worker. Reuses attributed Seogaemo lane decoder, glyphs and junction
+templates; no new native patch or periodic CP screen refresh. See matching changelog.
+Vehicle validation of lane/junction display remains pending.

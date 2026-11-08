@@ -22,11 +22,33 @@ public final class UsbCarplay extends ModEntry {
     @Override public void zygoteInit(ModContext m) throws Throwable {
         if(!Provider.PRODUCT.equals(Provider.property("ro.build.product")) || !"tcc803x".equals(Provider.property("ro.board.platform")))
             throw new IllegalStateException("USB_CP_WRONG_TARGET");
-        m.log("USB_CP_ZYGOTE_READY version=1.0.1");
+        m.log("USB_CP_ZYGOTE_READY version=1.0.2");
     }
     @Override public void appLoaded(final ModContext m, final LoadedApp a) throws Throwable {
+        if ("com.mobis.welcome".equals(a.packageName)) {
+            WelcomePower.install(m,a);
+            return;
+        }
+        if (a.context != null && "com.google.android.projection.sink".equals(a.packageName)) {
+            m.appPart(a,"hmgapi.mods.wireless.gpm.Gpm")
+                    .getMethod("install",ModContext.class,LoadedApp.class).invoke(null,m,a);
+            return;
+        }
+        if (a.context != null && ProjectionSettings.supports(a.packageName)) {
+            ProjectionSettings.install(m, a);
+            return;
+        }
         if (a.context != null && "com.mnsoft.navi".equals(a.packageName)) {
-            if (m.settingBoolean("carplay_tbt", true)) yieldNativeDistances(m, a);
+            NativeTbtEvidence.install(m, a);
+            // Both hooks are replace-priority on these points: register the passive
+            // observer first so it sees the unchanged stock record before overlay.
+            if (m.settingBoolean("ar_view", false)) CpTrapOverlay.install(m, a);
+            { // Basic CP/AA guidance always owns its navigation outputs.
+                yieldNativeDistances(m, a);
+                yieldNativeLanes(m, a);
+                yieldNativeTurnList(m, a);
+                yieldNativeAdvancedTbt(m, a);
+            }
             return;
         }
         if(a.context==null || !(DIPO.equals(a.packageName)||IAP2.equals(a.packageName)))return;
@@ -44,38 +66,94 @@ public final class UsbCarplay extends ModEntry {
         }},new ApClient.Audit(){public void event(String detail){m.log(detail);}});
         if(IAP2.equals(a.packageName)) iap2();
         else {
+            OemPower.install(m,a);
             Class<?> part=m.appPart(a,"hmgapi.mods.wireless.dipo.Dipo");
             apChanged=part.getMethod("usbApChanged");
-            // A Java platform interface crosses the app-part loader boundary, never our same-jar classes.
             part.getMethod("startUsb",ModContext.class,LoadedApp.class,Callable.class).invoke(null,m,a,new Callable<Boolean>(){
                 public Boolean call(){return current()!=null;}
             });
         }
         client.start();m.log("USB_CP_APP_READY "+a.packageName);
     }
-    /** Only the native navigation app's distance/turn writers share these display slots.
-     * DiPO's own calls, Android Auto and stock safety/camera messages are outside this hook. */
+    private static boolean phoneGuiding(ModContext mod, Context context) {
+        return mod.enabled() && (Car.carPlayGuiding(context) || Car.androidAutoGuiding(context));
+    }
+    /** Only native-navigation writers yield; phone writers and stock warnings stay untouched. */
     private static void yieldNativeDistances(final ModContext mod, final LoadedApp app) {
+        if (app.context == null || !"com.mnsoft.navi".equals(app.packageName)) return;
+        final NativeGuidanceTrace trace = new NativeGuidanceTrace(new NativeGuidanceTrace.Sink() {
+            public void event(String line) { mod.log(line); }
+        });
+        final java.util.concurrent.atomic.AtomicBoolean yielded = new java.util.concurrent.atomic.AtomicBoolean();
+        String[] writers = { "update_tbt_info", "update_tbt_sub_info", "update_tbt_sub_info_b",
+                "update_tbt_sub_info_2c", "update_remain_dis" };
+        for (final String writer : writers) {
+            mod.hook(null, "framework.navigation_cluster." + writer, new MethodHook() {
+                @Override protected void beforeHookedMethod(Param p) {
+                    boolean phone = phoneGuiding(mod, app.context);
+                    // Observed native writer inputs, not guessed icon meanings or CAN acknowledgements.
+                    trace.observe(writer, p.args, SystemClock.elapsedRealtime(), mod.enabled() && !phone);
+                    if (phone) {
+                        p.setResult(null);
+                        if (yielded.compareAndSet(false, true)) mod.log("USB_CP_TBT_NATIVE_DISTANCE_YIELDED");
+                    }
+                }
+            });
+        }
+    }
+    /** Keep native lane frames from replacing phone guidance in either projection app.
+     * Hooks exist only in native navigation; DiPO/GPM frames and warnings stay untouched. */
+    private static void yieldNativeLanes(final ModContext mod, final LoadedApp app) {
+        if (app.context == null || !"com.mnsoft.navi".equals(app.packageName)) return;
         MethodHook giveWay = new MethodHook() {
             private boolean seen;
             @Override protected void beforeHookedMethod(Param p) {
-                if (Car.carPlayGuiding(app.context)) {
+                if (phoneGuiding(mod, app.context)) {
                     p.setResult(null);
                     if (!seen) {
                         seen = true;
-                        mod.log("USB_CP_TBT_NATIVE_DISTANCE_YIELDED");
+                        mod.log("USB_CP_TBT_NATIVE_LANES_YIELDED");
                     }
                 }
             }
         };
-        String[] writers = { "update_tbt_info", "update_tbt_sub_info", "update_tbt_sub_info_b",
-                "update_tbt_sub_info_2c", "update_remain_dis" };
-        for (String writer : writers) mod.hook(null, "framework.navigation_cluster." + writer, giveWay);
+        mod.hook(null, "framework.navigation_cluster.update_lane_info", giveWay);
+        mod.hook(null, "framework.navigation_cluster.update_tp_lane_info", giveWay);
+    }
+    /** Native Navi's F2 list must not replace the phone's HUD turn list.
+     * Install only in the native process; DiPO/GPM keep their own F2 writers. */
+    private static void yieldNativeTurnList(final ModContext mod, final LoadedApp app) {
+        if (app.context == null || !"com.mnsoft.navi".equals(app.packageName)) return;
+        final java.util.concurrent.atomic.AtomicBoolean yielded = new java.util.concurrent.atomic.AtomicBoolean();
+        mod.hook(null, "framework.navigation_cluster.update_tp_turn_list_new", new MethodHook() {
+            @Override protected void beforeHookedMethod(Param p) {
+                if (phoneGuiding(mod, app.context)) {
+                    p.setResult(null);
+                    if (yielded.compareAndSet(false, true)) mod.log("USB_CP_TBT_NATIVE_TURN_LIST_YIELDED");
+                }
+            }
+        });
+    }
+    /** Native junction/pattern updates, including clears, yield only to enabled CP junction views.
+     * AA has no advanced writer. The passive observer and DiPO/GPM writers stay untouched. */
+    private static void yieldNativeAdvancedTbt(final ModContext mod, final LoadedApp app) {
+        if (app.context == null || !"com.mnsoft.navi".equals(app.packageName)) return;
+        final java.util.concurrent.atomic.AtomicBoolean yielded = new java.util.concurrent.atomic.AtomicBoolean();
+        MethodHook giveWay = new MethodHook() {
+            @Override protected void beforeHookedMethod(Param p) {
+                if (mod.enabled() && Car.carPlayGuiding(app.context)) {
+                    p.setResult(null);
+                    if (yielded.compareAndSet(false, true)) mod.log("USB_CP_TBT_NATIVE_ADVANCED_YIELDED");
+                }
+            }
+        };
+        mod.hook(null, "framework.navigation_cluster.update_clu_data_14", giveWay);
+        mod.hook(null, "framework.navigation_cluster.update_clu_data_new_14", giveWay);
     }
     private Snapshot current(){return mod!=null && mod.enabled() && client!=null ? client.current():null;}
     private void iap2() {
         final ClassLoader cl=app.classLoader;
-        if (mod.settingBoolean("carplay_tbt", true)) {
+        { // Route-guidance capability is independent of the AR display switch.
             mod.hook(cl, "iap2.init_info.check_supports_features", new MethodHook() {
                 @Override protected void afterHookedMethod(Param p) {
                     if (p.getThrowable() != null) return;

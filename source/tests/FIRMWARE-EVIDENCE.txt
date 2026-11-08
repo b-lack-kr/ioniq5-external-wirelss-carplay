@@ -1,0 +1,84 @@
+1.0.2 private vehicle evidence collection (Setup history)
+
+Scope: first-party NEEV 260902 code needed for MICOM power/audio behavior and
+cluster maneuver mapping. No binary is shipped in the public source/package.
+Only the USB returned by the vehicle contains exported code; do not publish
+these OEM binaries to GitHub or attach raw files publicly.
+
+Target guard: ro.build.product NEEV.KOR.0000.V039.001.260902 and
+ro.board.platform tcc803x. Paths below are fixed in Setup.java. No app-data,
+map, settings, history or directory tree is recursively copied.
+
+Artifact selection (8 maximum, combined 96 MiB maximum):
+automotive.odex             /system/framework/    cap16MiB
+automotive-service.odex     /system/framework/    cap24MiB
+libExSLNavi.so              exact candidates below cap80MiB
+libExSLAndroidJNI.so        exact candidates below cap16MiB
+SystemUI.odex               /system/app/ or /system/priv-app/ cap12MiB
+HKMC_GPM.odex               /system/app/          cap8MiB
+framework.odex              /system/framework/    cap32MiB
+HKMC_Navi_ExSL.odex         /system/app/          cap8MiB
+
+Size and hash evidence available before export:
+- Actual car-report-neev-kor-260902-20231104-1101.json has MD5s only, no sizes:
+  automotive.odex c76b8209ef171739b177eb14e8df61dd
+  automotive-service.odex 7f8058346d64d6664e69f209a553c931
+  framework.odex ffe86fa1540c8dea3b5499b1191bb727
+- Leafia NEEV.KOR.02 kit BUILD_RECEIPT.json reference:
+  HKMC_Navi_ExSL.odex 922648 bytes, MD5 8d6fa29fb222b1bb75f8fdbc3aab48eb,
+  SHA256 e37a6683c415e81a315cb2a7571d7aed3187c9dd30c6055c5efefb15bd4c250e.
+  HKMC_GPM.odex 1851472 bytes, MD5 c38a7fd61f90973625401501215375db,
+  SHA256 f40fb2650a98e80e8f8f641a1d556931ff473d69ecaa0435ec1584b8520f06b8.
+  Navi's APK is338000 bytes, but it is not included: existing reference resource
+  inspection is already available. SystemUI target size/hash is unknown.
+  GPM code takes priority over SystemUI APK resources so the actual target's
+  ramp codes can be checked without exceeding eight artifacts.
+- Unknown sizes above are not treated as measured sizes. Limits are collection
+  bounds. Actual stat size, MD5 and SHA256 are recorded on USB per file. A
+  reference hash mismatch is labeled NO; it does not execute or patch code.
+
+Native Navi exact candidates for each of the two .so basenames only:
+/data/data/com.mnsoft.navi/BIN/
+/storage/navi/navi/BIN/G40/
+/storage/navi/navi/BIN/G45/
+/storage/navi2/navi/BIN/G40/
+/storage/navi2/navi/BIN/G45/
+/system/lib/
+Reference HKMC_Navi_ExSL com/mnsoft/navi/d/f.java jR() loads the G40/G45
+paths selected by b/i.fj(), d/b.bT() (map_index0/1 chooses navi/navi2).
+jS() loads the exact data/BIN code files; both use system library fallback.
+These exact code-file exceptions do not authorize other content below data
+or storage. The collector never opens map_index.cfg or map/user files.
+
+The collector asks ActivityManager for the exact com.mnsoft.navi process.
+For that PID alone it checks /proc/PID/cmdline (256-byte bound) and maps
+(1MiB bound), retaining ONLY matches to the two allowlisted library paths.
+Raw proc contents, process identities and memory addresses are never exported.
+One unique loaded path is preferred and labeled ACTIVE_PROCESS_MAP. If no
+unique allowed loaded path is available, fixed fallback selection is labeled
+FIXED_FALLBACK_UNCONFIRMED. This does not claim the selected file was loaded.
+
+All copied sources must be regular canonical files, satisfy their size cap
+and format header (ARM32 little-endian ELF, ODEX035/036, or APK ZIP magic).
+Copying stops at the stat size, rejects growth/truncation/changed stat, syncs
+the file, then publishes a completed destination. Partial outputs are removed.
+Neither output directories/files nor source symlinks are overwritten/followed.
+Missing, changed, oversized, unsafe or unreadable files yield explicit status
+and overall partial7 without changing installed CarPlay state.
+
+Persistent log evidence:
+Official HMG-API1.0.1 core/runtime/java/hmgapi/engine/LogKeeper.java and
+ModRuntime.LOG_SERVICE establish an always-on logcat HMG-API keeper at
+/data/hmgapi/logs/hmgapi/log.log with256KiB rotation to .1. The collector now
+exports current and previous files separately through the existing strict
+History sanitizer, maximum256 reconstructed events per source and192KiB
+input tail each. Volatile logcat is still separately collected. This recovers
+previous-boot observations while retained, but is bounded rotating history
+and is not a guarantee of every past event. Other mod logs and raw text are
+discarded. No new logger or vehicle process is started.
+
+Validation: source/tests/test_history.py runs HistoryTest and
+FirmwareEvidenceTest. Tests cover1.0.2 boot markers, persistent recovery and
+redaction, fixed artifact count, canonical-path/header restrictions, exact
+copy hashes, pre-copy per-file/total budget, target mismatch, no overwrite,
+active-path precedence, ambiguous processes and bounded proc input.

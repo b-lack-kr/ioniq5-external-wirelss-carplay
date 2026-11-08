@@ -1,0 +1,51 @@
+NEEV 260902 / CarPlay 1.0.2 audio routing repair
+
+Observed vehicle symptom
+Navigation voice loudness does not respond to either displayed volume
+control. The user remembers a CarPlay label in the original wired mode.
+Music volume failure has not been established. A UI label alone does not
+prove the selected physical gain: stock music focus uses Android stream 3
+together with OEM mode 115. The actual volume OSD implementation is not
+available in the collected code.
+
+Code defects targeted
+1. Stock q.onAudioStreamStart selects alternate route 13 (DIPOALT) or
+   19 (DIPOALTSOUND) using the duck state at stream-start time. Later
+   q.aI/aJ callbacks change the duck state without reclassifying an
+   already-open alternate route. A persistent alternate stream or a
+   stream-start-before-duck sequence can remain on the earlier route.
+2. Stock DipoService.eL records hk=true even if startDiPOMusic(0)
+   explicitly returns false. A later normal request then exits early.
+
+Repair scope
+Only the package's confirmed wireless CarPlay session is eligible.
+The repair tracks a live alternate stream and a positively accepted
+MICOM route. It reclassifies that route when stock duck/unduck state
+changes. A stale iZ value after stream-stop is not an active stream.
+No gain value, Android volume stream, codec, PCM device, or UI label is
+forcibly replaced. Stock call, telematics, activation and ownership
+conditions remain authoritative. Stop/finalize invalidate tracked state.
+
+The music-start correction is scoped to the actual stock eL call that
+received a failed MICOM response. It preserves successful starts and
+no-op calls and lets the next normal stock event retry. There is no
+timer-driven music-start loop. Stock mute requests remain unchanged.
+
+Evidence boundary
+Exact captured HKMC_DiPO.odex SHA256:
+a9e02a4c183eb1cb33bbdb4d9eb3d42ff79f6bfaf6d6990c196afd6b56694cfb
+Method/field declarations and quickened branch structure were inspected
+in that ODEX. Symbolic field meaning was cross-checked with the supplied
+unquickened DiPO reference. This is not a complete framework deodex.
+Code evidence establishes the two paths, not that this vehicle's symptom
+took either path. Actual guidance gain and volume-label behavior still
+require a vehicle test.
+
+Verification and collection
+tests/test_audio_routing.py exercises the real hook wrapper with modeled
+OEM callbacks and MICOM responses. tests/test_history.py verifies export
+of USB_CP_AUDIO_ROUTE events using a finite numeric vocabulary.
+The existing passive audio observer remains available. Routing records
+contain channel/status numbers, never audio, track names or phone IDs.
+When the same installed candidate's USB is inserted again, these records
+are collected through the existing history export path.

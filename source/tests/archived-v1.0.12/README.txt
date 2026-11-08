@@ -1,0 +1,1 @@
+Historical v1.0.12 CP Seogaemo tests retained for reference. They are not the active v1.0.13 CarPlay test suite. Active test_maneuvers.py/test_lanes.py use the v1.0.9 packet behavior, plus AR-independent PE14 validation. AA retains its independent newer code/tests.

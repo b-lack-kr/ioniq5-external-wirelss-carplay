@@ -1,13 +1,13 @@
 {
   "id": "neev-usb-carplay",
   "name": "IONIQ 5 USB CarPlay",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "hmgapi": ">=1.0.1",
   "authors": [
     "by blackr"
   ],
   "license": "AGPL-3.0",
-  "description": "Wireless CarPlay over a compatible 5 GHz USB Wi-Fi adapter, with cluster and HUD guidance. Korean NEEV 260902 only.",
+  "description": "Wireless CarPlay over a compatible 5 GHz USB Wi-Fi adapter, with CarPlay/Android Auto cluster and HUD guidance. Korean NEEV 260902 only.",
   "system": {
     "model": "NEEV",
     "region": "KOR",
@@ -53,7 +53,56 @@
       "framework.navigation_cluster.update_tbt_sub_info": "replace",
       "framework.navigation_cluster.update_tbt_sub_info_b": "replace",
       "framework.navigation_cluster.update_tbt_sub_info_2c": "replace",
-      "framework.navigation_cluster.update_remain_dis": "replace"
+      "framework.navigation_cluster.update_remain_dis": "replace",
+      "framework.navigation_cluster.update_lane_info": "replace",
+      "framework.navigation_cluster.update_tp_lane_info": "replace",
+      "framework.navigation_cluster.update_tp_turn_list_new": "replace",
+      "dipo.location.start": "observe",
+      "dipo.location.stop": "observe",
+      "dipo.location.sentence": "change",
+      "dipo.location_speed.changed": "observe",
+      "dipo.location_nmea.received": "observe",
+      "dipo.iap2_proxy.send_location": "observe",
+      "dipo.carplay.audio_stream_start": "observe",
+      "dipo.carplay.audio_stream_stop": "observe",
+      "dipo.session_listener.audio_stream_start": "change",
+      "dipo.session_listener.audio_stream_stop": "change",
+      "dipo.session_listener.duck": "change",
+      "dipo.session_listener.unduck": "change",
+      "framework.micom_audio.start_audio": "change",
+      "framework.micom_audio.end_audio": "observe",
+      "framework.micom_audio.start_dipo_music": "observe",
+      "dipo.micom_listener.status_changed": "observe",
+      "dipo.key_listener.all_keys": "observe",
+      "dipo.audio_owner.start_music": "change",
+      "dipo.mode_power_listener.power_off": "observe",
+      "dipo.mode_power_listener.power_on": "observe",
+      "phoneprojection.usbcp_settings.open": "replace",
+      "btsettings.usbcp_settings.open": "replace",
+      "dipo.carplay.screen_started": "observe",
+      "dipo.carplay.screen_stopped": "observe",
+      "dipo.carplay.screen_timeout": "observe",
+      "dipo.carplay.decode_failure": "observe",
+      "dipo.carplay.video_mode_changed": "observe",
+      "dipo.carplay.show_display": "observe",
+      "dipo.carplay.hide_display": "observe",
+      "dipo.video_activity.resume": "observe",
+      "dipo.video_activity.pause": "observe",
+      "dipo.video_surface.created": "observe",
+      "dipo.video_surface.changed": "observe",
+      "dipo.video_surface.destroyed": "observe",
+      "framework.context_impl.start_service": "replace",
+      "gpm.navigation_status.init": "change",
+      "gpm.navigation_status.next_turn": "observe",
+      "gpm.navigation_status.next_turn_distance": "observe",
+      "gpm.navigation_status.status": "observe",
+      "gpm.receiver.send_navigation_focus": "observe",
+      "gpm.receiver.destroy": "observe",
+      "framework.navigation_cluster.update_tbt_trap_info": "replace",
+      "framework.navigation_cluster.update_tbt_trap_info_new": "replace",
+      "framework.navigation_cluster.update_clu_data_14": "replace",
+      "framework.navigation_cluster.update_clu_data_new_14": "replace",
+      "welcome.service.animation_status": "observe"
     },
     "native": {
       "libCarPlayCore.so": [
@@ -67,6 +116,9 @@
       ],
       "libCarPlayCoreUtils.so": [
         "recipes/carplay-usb-dongle-transport.recipe"
+      ],
+      "libautoreceiver_infobank.so": [
+        "recipes/aa-tbt-48ee793a.recipe"
       ]
     }
   },
@@ -82,6 +134,14 @@
       "name": "ap-provider",
       "jar": "provider.jar",
       "class": "kr.ioniq5.usbcp.Provider",
+      "user": "root",
+      "start": "android",
+      "restart": true
+    },
+    {
+      "name": "development-log",
+      "jar": "provider.jar",
+      "class": "kr.ioniq5.usbcp.DevelopmentLogger",
       "user": "root",
       "start": "android",
       "restart": true

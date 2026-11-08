@@ -11,6 +11,7 @@ public final class Provider {
     public static final String PRODUCT="NEEV.KOR.0000.V039.001.260902";
     private final String epoch=UUID.randomUUID().toString();
     private ApState state;
+    private PowerControl power;
     private DecisionLog decisions;
     public static String property(String key) throws Exception {
         return (String)Class.forName("android.os.SystemProperties").getMethod("get",String.class).invoke(null,key);
@@ -70,10 +71,16 @@ public final class Provider {
     }
     private void run() throws Exception {
         final AcceptedOwner owner=new AcceptedOwner();
-        state=new ApState(epoch,SystemClock.elapsedRealtime());
+        boolean externalEnabled=false;String externalStatus="INVALID";
+        try {externalEnabled=ExternalDongleSetting.read(new File(ExternalDongleSetting.PATH));externalStatus=externalEnabled?"ON":"OFF";}
+        catch(IOException invalid) { /* Malformed settings keep the owned radio unavailable until restart. */ }
+        state=new ApState(epoch,SystemClock.elapsedRealtime(),externalEnabled);
+        power=new PowerControl(new PowerLatch(new File("/data/local/tmp/neev_usbcp/power-event"),PowerLatch.bootId(),SystemClock.elapsedRealtimeNanos()),state,SystemClock.elapsedRealtime());
         final LocalServerSocket server=new LocalServerSocket(SOCKET); // bind before starting worker: singleton
         decisions=new DecisionLog(new File("/data/nemesis/neev-usbcp-logs/provider.log"));
-        decisions.event("CP_PROVIDER version=1.0.1 event=started");
+        decisions.event("CP_PROVIDER version=1.0.2 event=started");
+        decisions.event("CP_CONFIG external_dongle="+externalStatus);
+        decisions.event("CP_POWER event=restored state="+power.state());
         Thread poll=new Thread(new Runnable(){public void run(){
             LiveAp ap=new LiveAp();boolean wasReady=false;long heartbeat=0;
             while(true) {
@@ -117,6 +124,13 @@ public final class Provider {
                 DataInputStream in=new DataInputStream(s.getInputStream());
                 if(in.readInt()!=Snapshot.MAGIC)continue;
                 int command=in.readUnsignedByte();
+                if(PowerLatch.powerCommand(command)) {
+                    if(!PowerLatch.powerPeer(command,uid,s.getPeerCredentials().getPid()))continue;
+                    PowerLatch.Event event=PowerLatch.Event.read(in);
+                    int result=power.accept(event,SystemClock.elapsedRealtimeNanos(),SystemClock.elapsedRealtime());
+                    decisions.event("CP_POWER event="+(result==PowerLatch.ACCEPTED?"accepted":result==PowerLatch.DUPLICATE?"duplicate":result==PowerLatch.REJECTED?"rejected":"failed")+" state="+power.state()+" source="+PowerLatch.source(command));
+                    s.getOutputStream().write(result);s.getOutputStream().flush();continue;
+                }
                 if(command!=0)continue;
                 Snapshot v=state.current(SystemClock.elapsedRealtime());
                 DataOutputStream out=new DataOutputStream(s.getOutputStream());v.write(out);out.flush();

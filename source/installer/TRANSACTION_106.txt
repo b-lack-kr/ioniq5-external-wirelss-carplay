@@ -1,0 +1,52 @@
+CarPlay 1.0.6 transaction migration
+
+New transaction: /data/nemesis/neev-usbcp/public-1.0.6
+Mod ID: neev-usb-carplay
+Native NEMESIS package ID: hmgapi.neev-usb-carplay
+Signing owner UUID: bd5f651c-38f9-8ef4-827c-34ad706c2b5c
+HMG-API minimum: 1.0.1 (installed 1.0.2 remains accepted)
+
+Authenticated 1.0.5 input:
+  Core archive: NEEV_260902_CarPlay_1.0.5_USB.zip
+  Core SHA256: 43f99958024d6bf5b1c949946fb4ac8bb6b120bd6ffc4a669c5c50f28b20a2ab
+  LOCAL USB SHA256: 7b5ecf9eb9e7ebc1080050af50598bafd3b26cb5decd18f1b7efb77b239bbf55
+  NEEV_CP/MANIFEST.md5 MD5: 9d0e922345184343d7c5c453200b8193
+  Signed mod manifest MD5: ed448f1ff1b2271cb94faca84d9c9b83
+
+The 1.0.5 wrapper-only USB shell compatibility fix did not change the signed kit/mod
+pair. The complete pinned old kit and old mod signature are checked before accepting
+1.0.5 as an update source. The installed mod is independently verified before backup.
+No old installer script is executed. Arbitrary same-version bytes are rejected.
+
+Preserved sources: both released 1.0.4 kit/mod pairs, final signed 1.0.3, map-repair
+1.0.2, original 1.0.1, legacy 0.1.10/0.1.11, and fresh installation. The accepted
+1.0.4 pairs cannot be mixed. No old release archive or transaction is rewritten.
+
+Update keeps existing AP identity, configuration and HMG settings. A failed update
+restores the exact source mod, original map and map-check receipt under the existing
+transaction rules. An interrupted install is recovered before retrying. The exact
+missing-target-map error alone permits reconstruction; unrelated errors do not.
+
+Completed manual uninstall, including after rollback, permits a fresh installation.
+Only an authenticated completed old workspace is parked in a unique removed archive;
+unknown, changed or incomplete workspaces stop instead of being deleted. Existing
+settings are parked with that workspace. Fresh installation requires the vendor input
+on USB. Independent mute-pause and startup packages are neither installed nor checked.
+
+USB_AUTO.sh installs 1.0.6 when missing, updates supported older versions, and exports
+logs only when the exact 1.0.6 installation is healthy. It never silently reinstalls
+a damaged same-version installation. The Android shell compatibility fix uses strict
+single-line validation plus echo, with no dependency on a printf command. Explicit
+recovery remains a separate manual operation with a zero-byte NEEV-CP-RESTORE marker.
+
+New host regression module test_upgrade_106.py reads the immutable real 1.0.5 ZIP
+and validates its archive and member hashes. Cases cover update/rerun/rollback,
+manual uninstall, rollback then uninstall, config/mute preservation, incomplete or
+unknown state, damaged kit/mod, install/map failures, interrupted install recovery,
+and missing-map repair. Existing 1.0.4 and older regression suites remain included.
+These tests model NEMESIS/Android engine effects. They do not prove live firmware,
+wireless transport, or signature engine execution on the vehicle.
+
+Feature scope for 1.0.6: screen recovery, AR turn-distance guards and evidence logging.
+This release does not claim to solve every AR HUD behavior, GPS delay, tunnel icon,
+or USB 5 V shutdown. Details are in the release feature/change documents.

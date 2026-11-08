@@ -1,0 +1,25 @@
+{
+  "release": "1.0.4",
+  "previous_version": "1.0.3",
+  "hmg_api_minimum": "1.0.1",
+  "previous_fixture": {
+    "filename": "NEEV_260902_CarPlay_1.0.3_USB.zip",
+    "sha256": "b720bb117309937e9d860cee1347eba991d8a01b0c972455cd15dfe8070ad219",
+    "kit_manifest_md5": "1b8b5e86837c69f0521e0cb9bb2ef1e7",
+    "signed_mod_manifest_md5": "8619831be09d30c44d02a6066defe0e4"
+  },
+  "test_count": 71,
+  "tests": {
+    "upgrade_102_and_103": "........................\n----------------------------------------------------------------------\nRan 24 tests in 123.662s\n\nOK",
+    "installer": "test_upgrade104_uninstalled_then_clean104 (__main__.Installation) ... ok\n\n----------------------------------------------------------------------\nRan 38 tests in 152.719s\n\nOK",
+    "missing_map": ".........\n----------------------------------------------------------------------\nRan 9 tests in 38.883s\n\nOK"
+  },
+  "shell_syntax": "/bin/sh -n passed for templates/NEMESIS.sh and templates/operate.sh",
+  "production_sha256": {
+    "build_installer.py": "33d7da5f207b4cb6b3b80b38c1ae641325529e7c7afa85a2fd4d13ed0ea09e64",
+    "templates/NEMESIS.sh": "b8afc04297c2a3310cf08d7235d68f8e850dd44e70144c55f0cac57148a6eaa6",
+    "templates/operate.sh": "55e00ba2a74ef5a5db80aa8492887448a96e8268785f5e90f06dcd6b090ef519"
+  },
+  "limits": "Host simulations model Android IPC, firmware writes and signing; not a vehicle test.",
+  "integration_note": "Final builder uses six application maps plus car.json and 18 target pins. Installer transaction templates are unchanged after the 71 host tests; final artifact integration is checked separately."
+}

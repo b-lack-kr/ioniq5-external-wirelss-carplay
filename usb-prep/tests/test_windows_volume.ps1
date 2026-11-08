@@ -58,7 +58,7 @@ try {
     $expected = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
     $folders = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     # ASCII root files plus spaces/non-ASCII and multiple missing parent levels.
-    foreach ($name in 'NEMESIS.data','NEMESIS.sh','LICENSE','packages/usbwifi.hotspot.zip','NEEV_CP/nested/한글 폴더/payload.txt') {
+    foreach ($name in 'NEMESIS.data','USB_AUTO.sh','NEMESIS.sh','LICENSE','packages/usbwifi.hotspot.zip','NEEV_CP/nested/한글 폴더/payload.txt') {
         $path = Join-Path $ready $name
         Put $path ('new ' + $name)
         $expected.Add($name, (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)
@@ -118,6 +118,7 @@ try {
         ExpectFailure { Write-SelectedVolume $selected @() } 'Injected identity failure did not stop the writer.'
         Assert $script:observedPayloadBeforeDescriptor 'Writer failed before reaching the injected failure.'
         Assert (![IO.File]::Exists([IO.Path]::Combine($root,'NEMESIS.data'))) 'Failed preparation published the installer descriptor.'
+        Assert (![IO.File]::Exists([IO.Path]::Combine($root,'USB_AUTO.sh'))) 'Failed payload preparation published USB_AUTO.sh.'
         $script:failAfterPayload = $false
         # Retry and then repeat a complete write with the previous payload intact.
         for ($iteration=1; $iteration -le 2; $iteration++) {

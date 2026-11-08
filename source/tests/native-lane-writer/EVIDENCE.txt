@@ -1,0 +1,26 @@
+NativeLaneWriter reflection contract — 2026-11-08
+
+Exact target framework:
+neev-carplay/versions/v1.0.7/research/exact-api/smali/com/hkmc/cluster/NavigationCluster.smali
+  line1880: public updateLaneInfo([B)V
+  copies the supplied array and calls IClusterService.updateNavigationLaneInfo([B)V.
+  RemoteException is caught internally and discarded before returning void.
+  line1504: public updateCluDataNew_14(IIIII)V does the same internal catch.
+
+Map: framework.navigation_cluster.update_lane_info = updateLaneInfo(byte[]) void,
+non-static. Construction uses framework.navigation_cluster.new(Context).
+
+The adapter improves observability over HMG-API 1.0.2 Cluster.laneInfo, whose
+generic call wrapper catches all Throwable and always returns void: missing
+mapping, bad receiver/signature, linkage failure and invocation exceptions now
+return false. Resolution is lazy on the independent auxiliary output worker and
+retried on the next real input event; no timer and no core TBT constructor IPC.
+
+True means only a normally returned framework invocation. It cannot prove
+Binder transport success, MCU acknowledgement or physical HUD/cluster rendering,
+because the exact framework API itself suppresses RemoteException. No private
+mService field or raw Binder transaction is used to overstate this guarantee.
+
+Host tests cover valid/clear frame preservation, clone isolation, invalid frame
+rejection, optional map/receiver/signature failures, same-input retry, and a
+NoClassDefFoundError thrown by the reflected receiver.
