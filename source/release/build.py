@@ -26,7 +26,7 @@ def readzip(src):
 
 def verify_contents(files, mod_id, owner):
     signed=json.loads(files['META-HMGAPI/manifest.json'])
-    assert signed['id']==mod_id=='neev-usb-carplay' and signed['version']=='1.0.2' and signed['uuid']==owner
+    assert signed['id']==mod_id=='neev-usb-carplay' and signed['version']=='1.0.3' and signed['uuid']==owner
     assert {n:sha(v) for n,v in files.items() if not n.startswith('META-HMGAPI/')}==signed['files']
     assert files['META-HMGAPI/signature']
 
@@ -97,6 +97,7 @@ def build(cpdir,owner,out):
     wrapper=(here/'NEMESIS.sh').read_text()
     replacements={
         '@OWNER_UUID@':owner,'@CP_LAUNCHER@':md5(original),
+        '@HOOK_DIAGNOSTICS@':(here.parent/'installer/templates/hook-diagnostics.sh').read_text(),
         '@SETUP_JAR@':md5(files['NEEV_CP/payload/setup.jar']),
         '@CP_PAYLOAD_MANIFEST@':md5(files['NEEV_CP/MANIFEST.md5']),
         '@CP_MOD_MANIFEST@':md5(cp['META-HMGAPI/manifest.json'])

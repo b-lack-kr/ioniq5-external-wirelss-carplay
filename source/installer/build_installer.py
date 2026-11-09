@@ -23,7 +23,7 @@ def build_payload(mod, setup_jar, maps, target, vendor_dir, out, uuid=DEFAULT_UU
     meta = json.loads((mod/'mod.json').read_text())
     assert re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', uuid)
     assert signed['uuid'] == uuid and meta['id'] == signed['id'] == 'neev-usb-carplay'
-    assert meta['version'] == signed['version'] == '1.0.2'
+    assert meta['version'] == signed['version'] == '1.0.3'
     assert set(signed['files']) == {f.relative_to(mod).as_posix() for f in mod.rglob('*')
                                     if f.is_file() and 'META-HMGAPI' not in f.parts}
     assert all(not f.is_symlink() for f in mod.rglob('*'))
@@ -53,7 +53,7 @@ def build_payload(mod, setup_jar, maps, target, vendor_dir, out, uuid=DEFAULT_UU
     entries = [f for f in sorted(pack.rglob('*')) if f.is_file()]
     manifest=''.join(f'{md5(f)}  {f.relative_to(pack).as_posix()}\n' for f in entries)
     (pack/'MANIFEST.md5').write_text(manifest)
-    wrapper=(HERE/'templates/NEMESIS.sh').read_text().replace('@PACK_MD5@',md5(pack/'MANIFEST.md5')).replace('@OWNER@',uuid).replace('@PUBLIC_MOD_MD5@',public_mod_md5)
+    wrapper=(HERE/'templates/NEMESIS.sh').read_text().replace('@HOOK_DIAGNOSTICS@',(HERE/'templates/hook-diagnostics.sh').read_text()).replace('@PACK_MD5@',md5(pack/'MANIFEST.md5')).replace('@OWNER@',uuid).replace('@PUBLIC_MOD_MD5@',public_mod_md5)
     (out/'NEMESIS.sh').write_text(wrapper)
     (out/'NEMESIS.data').write_text('[nemesis]\nversion=1.0\ntype=execute\npath=NEMESIS.sh\n')
     for f in (pack/'operate.sh',out/'NEMESIS.sh',pack/'import-hkg.sh'):

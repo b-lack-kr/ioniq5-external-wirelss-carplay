@@ -27,7 +27,7 @@ class Contract(unittest.TestCase):
             self.assertEqual(data.count(release.HASH_TOKEN),1)
             self.assertIn(release.KIT.encode(),data)
             self.assertNotIn('31개'.encode(),data)
-        self.assertTrue(release.RELEASE_BASE.endswith('/v1.0.2'))
+        self.assertTrue(release.RELEASE_BASE.endswith('/v1.0.3'))
 
     def test_windows_guid_fix_and_selected_volume_contract_are_preserved(self):
         script=(BASE/'source/tools/WindowsUsbVolume.ps1').read_text(encoding='utf-8-sig')

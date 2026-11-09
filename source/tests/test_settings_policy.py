@@ -11,7 +11,7 @@ settings=json.loads((source/'mod/settings.json').read_text())['settings']
 assert [(s['key'],s['default'],s['apply']) for s in settings]==[('ar_view',False,'restart'),('external_dongle',True,'restart')]
 reads=set()
 for java in (source/'mod/src').rglob('*.java'):reads.update(re.findall(r'settingBoolean\("([^"\\]+)"',java.read_text()))
-assert reads=={'ar_view'},reads
+assert reads=={'ar_view','external_dongle'},reads
 code=(source/'mod/src/hmgapi/mods/wireless/dipo/Dipo.java').read_text()
 start=code.index('        turns = new CpTurns(')
 end=code.index('        mod.hook(app.classLoader, "dipo.iap2_proxy.stop_route_guidance"',start)

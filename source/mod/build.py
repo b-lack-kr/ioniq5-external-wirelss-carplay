@@ -60,7 +60,7 @@ for folder in ('recipes','ap'):
 for name in ('ap/service.sh','ap/runtime.sh'):
     subprocess.run(['/bin/sh','-n',payload/name],check=True)
 manifest = json.loads((payload/'mod.json').read_text())
-assert manifest['id']=='neev-usb-carplay' and manifest['version']=='1.0.2'
+assert manifest['id']=='neev-usb-carplay' and manifest['version']=='1.0.3'
 wanted = {s for seq in manifest['hooks']['native'].values() for s in seq}
 assert wanted == {str(p.relative_to(payload)) for p in (payload/'recipes').iterdir()}
 # Only USB devices that the local identity validator accepts trigger driver loading.

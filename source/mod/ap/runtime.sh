@@ -48,6 +48,49 @@ ap_external_setting() {
     selected=$(CLASSPATH="$APP_DIR/../provider.jar" /system/bin/app_process /system/bin kr.ioniq5.usbcp.ExternalDongleSetting 2>/dev/null) || return
     case "$selected" in ON|OFF) EXTERNAL_DONGLE=$selected;; esac
 }
+# Only explicit recovery of a stopped AP installs this private request. Normal
+# automatic boot has no request for this boot and keeps its existing behavior.
+ap_manual_recovery_init() {
+    MANUAL_RECOVERY_PENDING=0
+    local request="$BASE/manual-ap-recovery" meta requested_boot requested_at extra boot now rest
+    [ ! -e "$request" ] && [ ! -L "$request" ] && return 0
+    [ -d "$BASE" ] && [ ! -L "$BASE" ] && [ -f "$request" ] && [ ! -L "$request" ] || return 1
+    meta=$(ls -l "$request") || return 1
+    set -- $meta
+    [ "$#" -ge 7 ] && [ "$1" = -rw------- ] || return 1
+    case "$2" in root|0) ;; *) return 1;; esac
+    case "$4" in ''|*[!0-9]*|0?*) return 1;; esac
+    [ "${#4}" -le 3 ] && [ "$4" -le 128 ] || return 1
+    exec 7< "$request" || return 1
+    read -r requested_boot requested_at extra <&7 || { exec 7<&-; return 1; }
+    [ -z "$extra" ] || { exec 7<&-; return 1; }
+    extra=
+    if read -r extra <&7 || [ -n "$extra" ]; then exec 7<&-; return 1; fi
+    exec 7<&-
+    ap_boot_id_valid "$requested_boot" || return 1
+    case "$requested_at" in ''|*[!0-9]*|0?*) return 1;; esac
+    [ "${#requested_at}" -le 9 ] || return 1
+    read -r boot < /proc/sys/kernel/random/boot_id || return 1
+    ap_boot_id_valid "$boot" || return 1
+    # Retain the record as evidence but do not alter normal boots that follow it.
+    [ "$requested_boot" = "$boot" ] || return 0
+    read -r now rest < /proc/uptime || return 1
+    now=${now%%.*}
+    case "$now" in ''|*[!0-9]*|0?*) return 1;; esac
+    [ "${#now}" -le 9 ] && [ "$requested_at" -le "$now" ] || return 1
+    MANUAL_RECOVERY_AFTER=$now
+    MANUAL_RECOVERY_PENDING=1
+    echo "AP_MANUAL_RECOVERY state=WAIT_POWER_READER"
+}
+ap_manual_recovery_ready() {
+    [ "${MANUAL_RECOVERY_PENDING:-0}" = 1 ] || return 0
+    # ap_power_gate has just sampled the current reader. Never accept the old
+    # reader's still-fresh ON file from the same second as this service start.
+    [ "${POWER_READER_DIAG:-}" = VALID ] && [ "${POWER_OBSERVED:-}" = ON ] &&
+        [ "${POWER_READER_STAMP:-0}" -gt "$MANUAL_RECOVERY_AFTER" ] || return 1
+    MANUAL_RECOVERY_PENDING=0
+    echo "AP_MANUAL_RECOVERY state=POWER_CONFIRMED"
+}
 ap_power_start() {
     ap_child_live "${POWER_PID:-}" && return 0
     if ap_valid_pid "${POWER_PID:-}"; then wait "$POWER_PID" 2>/dev/null || :; fi
@@ -89,7 +132,7 @@ ap_ns_after() {
 }
 ap_power_sample() {
     local stamp value raw record_boot decision reason extra now rest boot
-    POWER_OBSERVED=UNKNOWN; POWER_OBSERVED_NS=0
+    POWER_OBSERVED=UNKNOWN; POWER_OBSERVED_NS=0; POWER_READER_STAMP=0
     POWER_READER_DIAG=ABSENT; POWER_READER_REASON=UNKNOWN
     ap_child_live "${POWER_PID:-}" || ap_power_start
     [ -f "$TMP_DIR/power-state" ] && [ ! -L "$TMP_DIR/power-state" ] || return
@@ -115,7 +158,7 @@ ap_power_sample() {
         ap_child_live "${POWER_PID:-}" && [ "$((now-stamp))" -le 6 ] || return
     else return
     fi
-    POWER_OBSERVED=$value; POWER_OBSERVED_NS=$decision
+    POWER_OBSERVED=$value; POWER_OBSERVED_NS=$decision; POWER_READER_STAMP=$stamp
     POWER_READER_DIAG=VALID; POWER_READER_REASON=$reason
 }
 ap_boot_id_valid() {

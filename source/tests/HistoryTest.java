@@ -436,7 +436,47 @@ public final class HistoryTest {
             check(History.sanitized("ap",bad) == null);
         check(History.sanitized("carplay",HEADER.replace("neev-usb-carplay","other") + audio) == null);
     }
+    static void manualDiagnostics() {
+        for(String event:new String[]{"accepted","preparing_ap","preparing_iap","server_ready"}) {
+            String line="USB_CP_MANUAL event="+event;sanitized(line,line);
+            sanitized(null,line+" phone=PRIVATE");
+        }
+        for(int status=0;status<=10;status++) {
+            String line="USB_CP_MANUAL event=finished status="+status;sanitized(line,line);
+        }
+        sanitized("USB_CP_MANUAL event=finished status=1","USB_CP_MANUAL event=finished status=01");
+        for(String stage:new String[]{"server_failed","request_failed","gate_failed","dispatch_failed"})
+            for(String kind:new String[]{"linkage","io","security","interrupted","runtime","other"}) {
+                String line="USB_CP_MANUAL event="+stage+" kind="+kind;sanitized(line,line);
+                sanitized(null,line+" exception=PRIVATE");
+            }
+        sanitized("USB_CP_APP_BOOTSTRAP phase=entered","USB_CP_APP_BOOTSTRAP phase=entered package=private.package.name");
+        sanitized("USB_CP_APP_BOOTSTRAP phase=entered","USB_CP_APP_BOOTSTRAP phase=entered");
+        for(String phase:new String[]{"oem_power_hook_failed","tbt_failed"}) {
+            String line="USB_CP_APP_BOOTSTRAP phase="+phase;sanitized(line,line);
+            sanitized(line,line+" type=PrivateException");
+        }
+        for(String bad:new String[]{"USB_CP_MANUAL event=PRIVATE","USB_CP_MANUAL event=finished",
+                "USB_CP_MANUAL event=finished status=-1","USB_CP_MANUAL event=finished status=11",
+                "USB_CP_MANUAL event=finished status=9223372036854775808","USB_CP_MANUAL event=finished status=1 status=2",
+                "USB_CP_MANUAL event=server_failed kind=PrivateException","USB_CP_MANUAL event=accepted kind=io",
+                "USB_CP_APP_BOOTSTRAP phase=PRIVATE","USB_CP_APP_BOOTSTRAP phase=entered package=private.name MAC=PRIVATE",
+                "USB_CP_APP_BOOTSTRAP phase=tbt_failed type=PrivateException message=PRIVATE",
+                "USB_CP_APP_BOOTSTRAP phase=tbt_failed package=private.name",
+                "USB_CP_APP_BOOTSTRAP phase=entered package=private.name\nSECRET"})sanitized(null,bad);
+        for(String recovery:new String[]{"0","1","2","3","4","5","6","7","8","failed"}) {
+            String line="wall_ms=123 elapsed_ms=456 CP_MANUAL_AP recovery="+recovery;
+            check(("123 456 manual_ap recovery="+recovery).equals(History.sanitized("provider",line)));
+            check(("123 456 manual_ap recovery="+recovery).equals(History.sanitized("provider",line+" dropped=2")));
+            check(History.sanitized("provider",line+" phone=PRIVATE")==null);
+        }
+        for(String bad:new String[]{"-1","9","01","PRIVATE","1 recovery=2","1 dropped=-1","1 dropped=9223372036854775808"})
+            check(History.sanitized("provider","wall_ms=123 elapsed_ms=456 CP_MANUAL_AP recovery="+bad)==null);
+        check("WAIT_POWER_READER".equals(History.sanitized("ap","AP_EVENT state=WAIT_POWER_READER")));
+        check(History.sanitized("ap","AP_EVENT state=WAIT_POWER_READER SSID=PRIVATE")==null);
+    }
     public static void main(String[] args) throws Exception {
+        manualDiagnostics();
         v15Diagnostics();
         diagnosticRecords();
         File root = new File(args[0]).getCanonicalFile();

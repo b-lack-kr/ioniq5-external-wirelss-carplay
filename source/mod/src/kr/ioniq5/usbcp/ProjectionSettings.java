@@ -27,6 +27,7 @@ public final class ProjectionSettings {
     public static void install(final ModContext mod,LoadedApp app) {
         if(app==null||app.context==null||!supports(app.packageName))return;
         if(android.os.Process.myUid()!=1000){mod.log("USB_CP_SETTINGS event=wrong_uid");return;}
+        BtSettingsRows.install(mod,app);
         final boolean projection=PROJECTION.equals(app.packageName);
         final String point=projection
                 ?"phoneprojection.usbcp_settings.open":"btsettings.usbcp_settings.open";

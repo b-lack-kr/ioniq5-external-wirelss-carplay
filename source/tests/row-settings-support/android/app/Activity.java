@@ -1,0 +1,1 @@
+package android.app; public class Activity extends android.content.Context {public boolean finishing,focused=true;public boolean isFinishing(){return finishing;}public boolean hasWindowFocus(){return focused;}}

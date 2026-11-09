@@ -7,7 +7,7 @@ USB=$(cd "$USB" && pwd -P) || exit 2
 W=/data/nemesis/neev-usbcp
 CP=/data/hmgapi/mods/neev-usb-carplay
 RESTORE="$USB/NEEV-CP-RESTORE"
-PUBLIC="$W/public-release-1.0.2"
+PUBLIC="$W/public-release-1.0.3"
 UUID=@OWNER_UUID@
 [ "$(getprop ro.build.product)" = NEEV.KOR.0000.V039.001.260902 ] || exit 2
 case "$(id)" in 'uid=0('*|'uid=0 '*|'uid=0') ;; *) exit 2;; esac
@@ -15,6 +15,8 @@ case "$(id)" in 'uid=0('*|'uid=0 '*|'uid=0') ;; *) exit 2;; esac
 OUT="$USB/NEEV_BUNDLE_RESULT_$(date +%Y%m%d_%H%M%S)_$$"
 mkdir "$OUT" || exit 2
 exec > "$OUT/INSTALL.log" 2>&1
+@HOOK_DIAGNOSTICS@
+hook_diagnostics > "$OUT/HMG_HOOK_STATUS.txt" 2>/dev/null || :
 notice() {
     am broadcast -a com.hkmc.intent.action.TOAST -e com.hkmc.intent.extra.TOAST_MESSAGE "$1" --ez com.hkmc.intent.extra.TOAST_POPUPSHOWING true >/dev/null 2>&1 || :
 }
@@ -42,7 +44,7 @@ cp_ready() {
     mod_pin=@CP_MOD_MANIFEST@
     setup_pin=@SETUP_JAR@
     [ "$(cp_state)" = INSTALLED ] &&
-        [ "$(cat "$W/UPGRADE_CURRENT.txt" 2>/dev/null)" = 1.0.2 ] &&
+        [ "$(cat "$W/UPGRADE_CURRENT.txt" 2>/dev/null)" = 1.0.3 ] &&
         [ -d "$CP" ] && [ ! -L "$CP" ] &&
         hash_is "$cp_kit/MANIFEST.md5" "$cp_pin" &&
         owned_mod "$cp_kit/payload/mod" "$mod_pin" || return 1
@@ -89,8 +91,8 @@ if [ "$action" = collect ]; then
         *) fail HISTORY_EXPORT_FAILED 'CarPlay 설치 유지. USB 기록 저장에 실패했습니다';;
     esac
     status LOGS_EXPORTED
-    notice 'CarPlay 1.0.2 상태 기록을 USB에 저장했습니다'
+    notice 'CarPlay 1.0.3 상태 기록을 USB에 저장했습니다'
     exit 0
 fi
 status COMPLETE
-notice 'CarPlay 1.0.2 설치 완료. 동글 연결 후 내비를 재부팅하세요'
+notice 'CarPlay 1.0.3 설치 완료. 동글 연결 후 내비를 재부팅하세요'

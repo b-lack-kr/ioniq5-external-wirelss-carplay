@@ -126,7 +126,7 @@ final class History {
             "STARTING DRIVER_PRELOAD WAIT_ANDROID WAIT_DONGLE DEVICE_VERIFIED HOSTAPD_STARTING DHCP_STARTING SERVICES_RUNNING WAIT_INTERFACE " +
             "AP_PERMISSION_FAILED CONFIG_MISSING CONFIG_INVALID DNSMASQ_EXITED DRIVER_FAILED HOSTAPD_EXITED " +
             "HOSTAPD_PATCH_FAILED IDENTITY_REJECTED NETWORK_SETUP_FAILED STOP_TIMEOUT VENDOR_ASSETS_INVALID HU_POWER_OFF " +
-            "EXTERNAL_DONGLE_OFF EXTERNAL_CONFIG_INVALID";
+            "EXTERNAL_DONGLE_OFF EXTERNAL_CONFIG_INVALID WAIT_POWER_READER";
     private static final String PHASES =
             "init configuration net_identity usb_identity process_identity hostapd_status hostapd_config " +
             "hostapd_ready_security credentials_match interface_identity stable_processes";
@@ -671,6 +671,26 @@ final class History {
         }
         return out.toString();
     }
+    /** Manual connection records carry only a fixed phase and a bounded result/category. */
+    private static String manualRecord(String message) {
+        java.util.regex.Matcher m=java.util.regex.Pattern.compile(
+                "^USB_CP_MANUAL event=(accepted|preparing_ap|preparing_iap|server_ready)$").matcher(message);
+        if(m.matches())return "USB_CP_MANUAL event="+m.group(1);
+        m=java.util.regex.Pattern.compile("^USB_CP_MANUAL event=finished status=(-?[0-9]{1,19})$").matcher(message);
+        if(m.matches()) {
+            String status=ranged(m.group(1),0,10);
+            return status==null?null:"USB_CP_MANUAL event=finished status="+status;
+        }
+        m=java.util.regex.Pattern.compile("^USB_CP_MANUAL event=(server_failed|request_failed|gate_failed|dispatch_failed) " +
+                "kind=(linkage|io|security|interrupted|runtime|other)$").matcher(message);
+        if(m.matches())return "USB_CP_MANUAL event="+m.group(1)+" kind="+m.group(2);
+        // Producers attach a package/class token. Deliberately discard it: only the
+        // fixed bootstrap phase is useful in exported diagnostics.
+        m=java.util.regex.Pattern.compile("^USB_CP_APP_BOOTSTRAP phase=entered(?: package=[A-Za-z0-9_.$]{1,255})?$").matcher(message);
+        if(m.matches())return "USB_CP_APP_BOOTSTRAP phase=entered";
+        m=java.util.regex.Pattern.compile("^USB_CP_APP_BOOTSTRAP phase=(oem_power_hook_failed|tbt_failed)(?: type=[A-Za-z][A-Za-z0-9_$]{0,63})?$").matcher(message);
+        return m.matches()?"USB_CP_APP_BOOTSTRAP phase="+m.group(1):null;
+    }
     static String sanitized(String stream, String line) {
         if ("power-input".equals(stream) || "power-decision".equals(stream)) {
             if (line == null || line.length() > 4096 || line.indexOf('\r') >= 0 || line.indexOf('\n') >= 0) return null;
@@ -685,6 +705,13 @@ final class History {
             return listed(AP_STATES, phase) ? phase : null;
         }
         if ("provider".equals(stream)) {
+            java.util.regex.Matcher manual=java.util.regex.Pattern.compile(
+                    "^wall_ms=([0-9]{1,15}) elapsed_ms=([0-9]{1,15}) CP_MANUAL_AP " +
+                    "recovery=([0-8]|failed)(?: dropped=([0-9]{1,19}))?$").matcher(line);
+            if(manual.matches()) {
+                if(manual.group(4)!=null && ranged(manual.group(4),0,Long.MAX_VALUE)==null)return null;
+                return manual.group(1)+" "+manual.group(2)+" manual_ap recovery="+manual.group(3);
+            }
             String usb=usbIdentityRecord(line);
             if (usb!=null) return usb;
             java.util.regex.Matcher config = java.util.regex.Pattern.compile(
@@ -718,6 +745,10 @@ final class History {
         java.util.regex.Matcher m = PROJECTION.matcher(line);
         if (!m.matches()) return null;
         String message = m.group(3), token = message.split(" ", 2)[0];
+        if("USB_CP_MANUAL".equals(token) || "USB_CP_APP_BOOTSTRAP".equals(token)) {
+            String manual=manualRecord(message);
+            return manual==null?null:m.group(1)+" "+manual;
+        }
         String detail = "USB_CP_TBT_LANES".equals(token) ? laneRecord(message) : metricRecord(message);
         if (detail != null) return m.group(1) + " " + detail;
         if ("USB_CP_TBT_DISTANCE".equals(token) || "USB_CP_TBT_DISPLAY".equals(token)) return null;

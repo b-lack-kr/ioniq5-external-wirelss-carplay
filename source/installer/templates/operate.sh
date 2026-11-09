@@ -324,16 +324,16 @@ install() {
     fi
     check_plan clean "$R/final-plan.log" && active_plan_ok "$R/final-plan.log" && known_mod "$PUBLIC_MANIFEST" || return 1
     startup_registered || { echo SERVICE_REGISTRATION_INVALID; return 1; }
-    echo 1.0.2 > "$W/UPGRADE_CURRENT.txt" && : > "$B/previously-installed" || return 1
+    echo 1.0.3 > "$W/UPGRADE_CURRENT.txt" && : > "$B/previously-installed" || return 1
     mark INSTALLED
     if [ "${NEEV_CP_BUNDLE:-0}" = 1 ]; then notice 'CarPlay 설치 완료. USB를 꽂아 두세요.'
-    else notice 'CarPlay 1.0.2 설치 완료. 동글 연결 후 내비를 재부팅하세요.'; fi
+    else notice 'CarPlay 1.0.3 설치 완료. 동글 연결 후 내비를 재부팅하세요.'; fi
 }
 current=$(cat "$R/STATUS")
 case "$current:$restore" in
-    INSTALLED:0) verify_public && [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.2 ] || stop INSTALLED_STATE_MISMATCH
+    INSTALLED:0) verify_public && [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.3 ] || stop INSTALLED_STATE_MISMATCH
         startup_registered || stop SERVICE_REGISTRATION_INVALID
-        notice 'CarPlay 1.0.2 설치 상태를 확인했습니다'; exit 0;;
+        notice 'CarPlay 1.0.3 설치 상태를 확인했습니다'; exit 0;;
     INSTALLED:1)
         check_plan clean "$R/pre-restore-plan.log" || stop UNAPPLIED_OTHER_CHANGES
         rollback || stop RESTORE_REQUIRED; exit 0;;
@@ -349,7 +349,7 @@ case "$current:$restore" in
 esac
 preflight
 prepare
-notice 'CarPlay 1.0.2 설치 준비 완료'
+notice 'CarPlay 1.0.3 설치 준비 완료'
 if ! install; then
     rollback || stop RESTORE_REQUIRED
     stop INSTALL_FAILED_RESTORED

@@ -13,7 +13,7 @@ case "$#:${1:-}" in
     *) stop '사용법: USB-준비-macOS.command [--prepare-only]' ;;
 esac
 folder=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd -P)
-kit_name=NEEV_260902_CarPlay_1.0.2_USB.zip
+kit_name=NEEV_260902_CarPlay_1.0.3_USB.zip
 release_base='@CARPLAY_RELEASE_BASE@'
 cache="$folder/HKG_5W_USBWifi_Hotspot.zip"
 ready="$folder/USB_READY"
@@ -36,7 +36,7 @@ download() {
         --output "$2" "$1"
 }
 
-printf '%s\n' '아이오닉 5 USB 무선 CarPlay 1.0.2 · by blackr'
+printf '%s\n' '아이오닉 5 USB 무선 CarPlay 1.0.3 · by blackr'
 work=$(/usr/bin/mktemp -d "$folder/.neev-usb.XXXXXXXX") || stop '압축을 푼 폴더에 쓸 수 없습니다. 다른 폴더로 옮겨 다시 실행하세요.'
 trap '/bin/rm -rf "$work"' 0
 trap 'exit 1' HUP INT TERM
@@ -46,9 +46,9 @@ if exists "$folder/$kit_name"; then
     [ -f "$folder/$kit_name" ] && [ ! -L "$folder/$kit_name" ] && cp "$folder/$kit_name" "$kit" || stop '옆에 있는 설치 ZIP을 읽지 못했습니다.'
 else
     printf '%s\n' 'by blackr 공식 릴리스에서 CarPlay 설치 파일을 받는 중입니다…'
-    download "$release_base/$kit_name" "$kit" || stop 'CarPlay 1.0.2 설치 파일을 받을 수 없습니다. 인터넷 연결을 확인하고 다시 실행하세요.'
+    download "$release_base/$kit_name" "$kit" || stop 'CarPlay 1.0.3 설치 파일을 받을 수 없습니다. 인터넷 연결을 확인하고 다시 실행하세요.'
 fi
-matches "$kit" "$kit_sha" || stop '설치 ZIP 검증에 실패했습니다. 1.0.2 공식 배포본을 확인하세요.'
+matches "$kit" "$kit_sha" || stop '설치 ZIP 검증에 실패했습니다. 1.0.3 공식 배포본을 확인하세요.'
 unzip -Z1 "$kit" > "$work/paths" || stop '설치 ZIP의 파일 목록을 읽지 못했습니다.'
 printf '%s\n' "$member" >> "$work/paths"
 expected_files=$(wc -l < "$work/paths" | tr -d ' ')
@@ -88,7 +88,7 @@ else
     [ -d "$ready" ] && [ ! -L "$ready" ] || conflict
     special=$(find "$ready" ! -type f ! -type d -print -quit) || conflict
     [ -z "$special" ] && diff -qr "$stage" "$ready" >/dev/null || conflict
-    printf '%s\n' '기존 USB_READY가 1.0.2 준비 파일과 일치합니다.'
+    printf '%s\n' '기존 USB_READY가 1.0.3 준비 파일과 일치합니다.'
 fi
 printf '\n%s\n%s\n' "$ready" 'USB 메모리의 기존 파일을 지운 뒤 USB_READY 안의 모든 항목을 USB 최상위에 복사하세요.'
 exit 0

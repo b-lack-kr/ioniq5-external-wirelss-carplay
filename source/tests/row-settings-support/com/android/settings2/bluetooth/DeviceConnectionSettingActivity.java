@@ -1,0 +1,1 @@
+package com.android.settings2.bluetooth;public class DeviceConnectionSettingActivity extends android.app.Activity {public boolean mL,regulated;public aW f=new aW();public android.bluetooth.BluetoothDevice mN,mR;public boolean fl(){return regulated;}protected void onDestroy(){}}

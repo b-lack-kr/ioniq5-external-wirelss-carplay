@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package public 1.0.2 PC tools after the signed vehicle/source pins are finalized."""
+"""Package public 1.0.3 PC tools after the signed vehicle/source pins are finalized."""
 import argparse
 from hashlib import sha256
 from io import BytesIO
@@ -11,9 +11,9 @@ from tempfile import NamedTemporaryFile
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 BASE = Path(__file__).resolve().parent
-KIT = 'NEEV_260902_CarPlay_1.0.2_USB.zip'
-SRC = 'NEEV_260902_CarPlay_1.0.2_SOURCE.zip'
-RELEASE_BASE = 'https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/download/v1.0.2'
+KIT = 'NEEV_260902_CarPlay_1.0.3_USB.zip'
+SRC = 'NEEV_260902_CarPlay_1.0.3_SOURCE.zip'
+RELEASE_BASE = 'https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/download/v1.0.3'
 TOKEN = b'@CARPLAY_RELEASE_BASE@'
 HASH_TOKEN = b'@CARPLAY_CORE_SHA256@'
 MAC = 'USB-준비-macOS.command'
@@ -22,9 +22,9 @@ WIN = 'tools/Prepare-USB.ps1'
 VOLUME = 'tools/WindowsUsbVolume.ps1'
 GUIDE = '사용안내.txt'
 SUMS = 'SHA256SUMS.txt'
-MAC_ZIP = 'Prepare-USB-macOS-v1.0.2.zip'
-WIN_ZIP = 'Prepare-USB-Windows-v1.0.2.zip'
-COMBINED = 'NEEV_260902_CarPlay_1.0.2_by_blackr.zip'
+MAC_ZIP = 'Prepare-USB-macOS-v1.0.3.zip'
+WIN_ZIP = 'Prepare-USB-Windows-v1.0.3.zip'
+COMBINED = 'NEEV_260902_CarPlay_1.0.3_by_blackr.zip'
 
 
 def require(test, message):
@@ -79,7 +79,7 @@ def check_core(data):
                 'Missing public CarPlay installation entry points')
         prefix = 'NEEV_CP/payload/mod/'
         manifest = json.loads(archive.read(prefix + 'META-HMGAPI/manifest.json'))
-        require(manifest['version'] == '1.0.2' and manifest['id'] == 'neev-usb-carplay', 'Wrong signed CarPlay package')
+        require(manifest['version'] == '1.0.3' and manifest['id'] == 'neev-usb-carplay', 'Wrong signed CarPlay package')
         require(manifest['files'] == {n[len(prefix):]: digest(archive.read(n)) for n in names
                                      if n.startswith(prefix) and not n.startswith(prefix + 'META-HMGAPI/')},
                 'Signed CarPlay file inventory mismatch')
@@ -160,13 +160,13 @@ def main():
     parser.add_argument('--pins', type=Path, default=BASE / 'release-pins.json')
     parser.add_argument('--assets-dir', type=Path, default=BASE / 'assets-carplay')
     parser.add_argument('--publish-folder', type=Path,
-                        help='Also put the combined ZIP here and its unpacked files in the 1.0.2 subfolder')
+                        help='Also put the combined ZIP here and its unpacked files in the 1.0.3 subfolder')
     args = parser.parse_args()
     contents, assets = build(args.signed_dir, args.source_dir, load_pins(args.pins))
     publish_folder(args.assets_dir, assets)
     if args.publish_folder:
         require(not args.publish_folder.is_symlink(), 'Refusing to publish releases through a symbolic link')
-        publish_folder(args.publish_folder / '1.0.2', contents)
+        publish_folder(args.publish_folder / '1.0.3', contents)
         put(args.publish_folder, COMBINED, assets[COMBINED])
     print(f'Verified release assets: {args.assets_dir}')
     print(assets[SUMS].decode(), end='')

@@ -9,5 +9,18 @@
     ],
     "ret": "void",
     "static": true
-  }
+  },
+  "btsettings.usbcp_rows": {"class":"com.android.settings2.bluetooth.cy"},
+  "btsettings.usbcp_rows.bind": {"method":"getView","params":["int","android.view.View","android.view.ViewGroup"],"ret":"android.view.View","static":false},
+  "btsettings.usbcp_rows.owner": {"field":"ja","type":"com.android.settings2.bluetooth.DeviceConnectionSettingActivity","static":false},
+  "btsettings.usbcp_devices": {"class":"com.android.settings2.bluetooth.DeviceConnectionSettingActivity"},
+  "btsettings.usbcp_devices.destroy": {"method":"onDestroy","params":[],"ret":"void","static":false},
+  "btsettings.usbcp_devices.restricted": {"method":"fl","params":[],"ret":"boolean","static":false},
+  "btsettings.usbcp_devices.hidden": {"field":"mL","type":"boolean","static":false},
+  "btsettings.usbcp_devices.manager": {"field":"f","type":"com.android.settings2.bluetooth.aW","static":false},
+  "btsettings.usbcp_devices.pending": {"field":"mN","type":"android.bluetooth.BluetoothDevice","static":false},
+  "btsettings.usbcp_devices.reserved": {"field":"mR","type":"android.bluetooth.BluetoothDevice","static":false},
+  "btsettings.usbcp_manager": {"class":"com.android.settings2.bluetooth.aW"},
+  "btsettings.usbcp_manager.btcm": {"method":"aO","params":[],"ret":"com.broadcom.bt.hfdevice.hfbtcm.HfDeviceBTCMManager","static":false},
+  "btsettings.usbcp_manager.wireless": {"method":"cp","params":[],"ret":"boolean","static":false}
 }

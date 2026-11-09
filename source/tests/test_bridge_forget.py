@@ -24,7 +24,7 @@ head=r'''import java.util.*;
 public class BridgeForgetTest {
  static String sAddr,sScheduledAddr,sLastBtId;static Object sCp;
  static boolean sCpClient,sCpConnected,sCpWireless,sSession,sUsb;
- static long sEpoch,sRequestedBtEpoch,sConfirmedBtEpoch,sCpBtEpoch;
+ static long btAttachStartedAt; static long sEpoch,sRequestedBtEpoch,sConfirmedBtEpoch,sCpBtEpoch;
  static class CpRawLanes {static void stop(){}}
  static final class Decoder {void reset(){}}
  static final Decoder laneDecoder=new Decoder();

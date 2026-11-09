@@ -50,7 +50,8 @@
     "btsettings": {
       "package": "com.android.btsettings",
       "files": [
-        "/system/app/HKMC_BtSettings.odex"
+        "/system/app/HKMC_BtSettings.odex",
+        "/system/framework/com.broadcom.bt.jar"
       ]
     },
     "buttonsettings": {

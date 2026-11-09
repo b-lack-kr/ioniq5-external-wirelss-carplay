@@ -128,7 +128,7 @@ class NativePackage(unittest.TestCase):
     def test_package_descriptor_keeps_existing_hmg_id_and_version(self):
         text=(self.pkg/'NEMESIS.data').read_text()
         self.assertIn('id=hmgapi.neev-usb-carplay\n',text)
-        self.assertIn('package-version=1.0.2\n',text)
+        self.assertIn('package-version=1.0.3\n',text)
         self.assertIn('depends="hmgapi@>=1.0.1"',text)
         self.assertEqual((self.pkg/'mod/id').read_text().strip(),'neev-usb-carplay')
         for path in self.pkg.rglob('*'):

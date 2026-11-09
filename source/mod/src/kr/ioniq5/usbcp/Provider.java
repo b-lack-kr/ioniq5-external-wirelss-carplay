@@ -36,13 +36,40 @@ public final class Provider {
     // executes Libcore.os.close instead of merely discarding the Java fd reference.
     static final class AcceptedOwner {
         final java.lang.reflect.Field impl, owns;
-        AcceptedOwner() throws Exception {
+        public AcceptedOwner() throws Exception {
             impl=LocalSocket.class.getDeclaredField("impl");impl.setAccessible(true);
             owns=impl.getType().getDeclaredField("mFdCreatedInternally");owns.setAccessible(true);
             if(owns.getType()!=boolean.class)throw new IOException("unsupported socket ownership");
         }
-        void take(LocalSocket socket)throws Exception {owns.setBoolean(impl.get(socket),true);}
+        public void take(LocalSocket socket)throws Exception {owns.setBoolean(impl.get(socket),true);}
     }
+    private final java.util.concurrent.atomic.AtomicBoolean recoveryQueued=new java.util.concurrent.atomic.AtomicBoolean();
+    private final ApServiceRecovery recovery=new ApServiceRecovery();
+    private int manualGate() {
+        try {
+            if(!ExternalDongleSetting.read(new File(ExternalDongleSetting.PATH)))return ManualWire.DISABLED;
+            if("OFF".equals(power.state()))return ManualWire.POWER_OFF;
+            if(!ManualPowerGate.allowed(SystemClock.elapsedRealtimeNanos()))return ManualWire.AP_UNAVAILABLE;
+            return state.current(SystemClock.elapsedRealtime()).ready?ManualWire.READY:ManualWire.AP_UNAVAILABLE;
+        }catch(Exception unavailable){return ManualWire.DISABLED;}
+    }
+    private void queueApRecovery() {
+        if(!recoveryQueued.compareAndSet(false,true))return;
+        Thread worker=new Thread(new Runnable(){public void run(){
+            try {
+                int result=recovery.recover(new ApServiceRecovery.Gate(){public int blocked(){
+                    try {
+                        if(!ExternalDongleSetting.read(new File(ExternalDongleSetting.PATH)))return ApServiceRecovery.DISABLED;
+                        String value=power.state();
+                        return "OFF".equals(value)?ApServiceRecovery.POWER_OFF:0;
+                    }catch(Exception unavailable){return ApServiceRecovery.DISABLED;}
+                }},new HmgApSupervisor(),SystemClock.elapsedRealtime());
+                decisions.event("CP_MANUAL_AP recovery="+result);
+            }catch(Throwable failure){decisions.event("CP_MANUAL_AP recovery=failed");}
+            finally{recoveryQueued.set(false);}
+        }},"usbcp-manual-ap");worker.setDaemon(true);worker.start();
+    }
+
     static void selftest()throws Exception {
         final AcceptedOwner owner=new AcceptedOwner();
         final String address="ioniq5-fd-test-"+UUID.randomUUID();
@@ -78,7 +105,7 @@ public final class Provider {
         power=new PowerControl(new PowerLatch(new File("/data/local/tmp/neev_usbcp/power-event"),PowerLatch.bootId(),SystemClock.elapsedRealtimeNanos()),state,SystemClock.elapsedRealtime());
         final LocalServerSocket server=new LocalServerSocket(SOCKET); // bind before starting worker: singleton
         decisions=new DecisionLog(new File("/data/nemesis/neev-usbcp-logs/provider.log"));
-        decisions.event("CP_PROVIDER version=1.0.2 event=started");
+        decisions.event("CP_PROVIDER version=1.0.3 event=started");
         decisions.event("CP_CONFIG external_dongle="+externalStatus);
         decisions.event("CP_POWER event=restored state="+power.state());
         Thread poll=new Thread(new Runnable(){public void run(){
@@ -124,6 +151,13 @@ public final class Provider {
                 DataInputStream in=new DataInputStream(s.getInputStream());
                 if(in.readInt()!=Snapshot.MAGIC)continue;
                 int command=in.readUnsignedByte();
+                if(command==ManualWire.PROVIDER_GATE || command==ManualWire.PROVIDER_PREPARE) {
+                    if(!ManualWire.peer(uid,s.getPeerCredentials().getPid(),ManualWire.DIPO))continue;
+                    int result=manualGate();
+                    if(command==ManualWire.PROVIDER_PREPARE && result==ManualWire.AP_UNAVAILABLE)
+                        queueApRecovery();
+                    s.getOutputStream().write(result);s.getOutputStream().flush();continue;
+                }
                 if(PowerLatch.powerCommand(command)) {
                     if(!PowerLatch.powerPeer(command,uid,s.getPeerCredentials().getPid()))continue;
                     PowerLatch.Event event=PowerLatch.Event.read(in);

@@ -18,7 +18,7 @@ mkdir "$OUT" || exit 2
 exec > "$OUT/RUN.log" 2>&1
 W=/data/nemesis/neev-usbcp
 CP=/data/hmgapi/mods/neev-usb-carplay
-PUBLIC="$W/public-release-1.0.2"
+PUBLIC="$W/public-release-1.0.3"
 CLI=/system/xbin/nemesis
 PACKAGE="$USB/packages/hmgapi.neev-usb-carplay.zip"
 regular() { [ -f "$1" ] && [ ! -L "$1" ]; }
@@ -84,7 +84,7 @@ while IFS= read -r row; do
 done <<END_PACKAGE
 $info
 END_PACKAGE
-[ "$pkg_id" = hmgapi.neev-usb-carplay ] && [ "$pkg_version" = 1.0.2 ] &&
+[ "$pkg_id" = hmgapi.neev-usb-carplay ] && [ "$pkg_version" = 1.0.3 ] &&
     [ "$seen_installed" = 1 ] && [ "$seen_installed_version" = 1 ] || fail PACKAGE_QUERY_INVALID
 case "$installed" in 0|1) ;; *) fail PACKAGE_QUERY_INVALID;; esac
 
@@ -100,7 +100,7 @@ if [ "$installed" = 1 ]; then
     known_version "$installed_version" || fail UNSUPPORTED_INSTALLED_VERSION
     directory "$CP" || fail INSTALL_STATE_MISMATCH
     [ "$workspace_version" = "$installed_version" ] || fail INSTALL_STATE_MISMATCH
-    if [ "$installed_version" = 1.0.2 ]; then
+    if [ "$installed_version" = 1.0.3 ]; then
         exists "$PUBLIC" || fail UNINSTALL_INTERNAL_TEST_VERSION
         directory "$PUBLIC" && [ "$(read_one_line "$PUBLIC/STATUS")" = INSTALLED ] || fail SAME_VERSION_INCOMPLETE
         # The original collector performs its full signed-file checks. A failure is
@@ -111,6 +111,11 @@ if [ "$installed" = 1 ]; then
         [ "$rc" = 0 ] || { status COLLECT_FAILED; exit "$rc"; }
         status COLLECT_COMPLETE
         exit 0
+    fi
+    if [ "$installed_version" = 1.0.2 ] && exists "$W/public-release-1.0.2"; then
+        status UNINSTALL_PREVIOUS_RELEASE
+        notice 'CarPlay 1.0.2를 NEMESIS에서 삭제한 뒤 1.0.3을 설치하세요'
+        exit 1
     fi
     [ "$installed_version" = 1.0.1 ] || fail UNINSTALL_INTERNAL_TEST_VERSION
     if exists "$PUBLIC"; then
@@ -133,6 +138,6 @@ fi
 rc=$?
 [ "$rc" = 0 ] || { status INSTALL_FAILED; exit "$rc"; }
 directory "$CP" && directory "$W" && directory "$PUBLIC" &&
-    [ "$(read_one_line "$W/UPGRADE_CURRENT.txt")" = 1.0.2 ] &&
+    [ "$(read_one_line "$W/UPGRADE_CURRENT.txt")" = 1.0.3 ] &&
     [ "$(read_one_line "$PUBLIC/STATUS")" = INSTALLED ] || fail INSTALL_RESULT_UNVERIFIED
 status INSTALL_COMPLETE

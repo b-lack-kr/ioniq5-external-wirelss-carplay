@@ -78,6 +78,8 @@ public final class Dipo {
     public static void startUsb(ModContext m, LoadedApp a, java.util.concurrent.Callable<Boolean> ready) {
         Bridge.usbApReady = ready;
         start(m, a);
+        try { ManualConnectServer.start(); }
+        catch (Throwable failure) { ManualDiagnostics.failure("server_failed", failure); }
     }
     public static void usbApChanged() { Bridge.usbApChanged(); }
 
@@ -98,7 +100,13 @@ public final class Dipo {
             m.nativePatch(a, "libCarPlayAudio.so");   // offer AAC and Opus on Wi-Fi
             m.nativePatch(a, "libCarPlayUtils.so");   // its AudioConverter calls go to libleafiaaac.so
         }
-        if (tbt) turnByTurn();
+        if (tbt) {
+            try { turnByTurn(); }
+            catch (Throwable failure) {
+                tbt = false;
+                log("USB_CP_APP_BOOTSTRAP phase=tbt_failed type="+failure.getClass().getSimpleName());
+            }
+        }
         if (bridge) bridge();
         // Resolve CarPlay transport before supplemental-location lifecycle hooks.
         if (bridge) CarPlayVehicleSpeed.install(m, a);

@@ -21,7 +21,7 @@ ACTIVE_IFINDEX=
 ADDED_ROUTES=
 ADDED_ADDRESS=0
 # This goes to hmgapid's service log even if the private AP directory is unavailable.
-echo 'AP_STARTUP version=1.0.2 phase=ENTRY'
+echo 'AP_STARTUP version=1.0.3 phase=ENTRY'
 startup_fail() { echo "AP_STARTUP_FAILURE reason=$1"; exit 3; }
 [ -f "$APP_DIR/runtime.sh" ] && [ ! -L "$APP_DIR/runtime.sh" ] || startup_fail RUNTIME_MISSING
 . "$APP_DIR/runtime.sh" || startup_fail RUNTIME_SOURCE
@@ -303,8 +303,9 @@ run_radio() {
     [ "$(getprop ro.board.platform)" = tcc803x ] && [ "$(cat /proc/sys/kernel/osrelease)" = 3.18.24-tcc ] || startup_fail TARGET_MISMATCH
 [ ! -e "$BASE/use-existing-ap" ] && [ ! -L "$BASE/use-existing-ap" ] || startup_fail EXISTING_AP_CONFLICT
 prepare_paths || startup_fail PREPARE_PATHS
+ap_manual_recovery_init || startup_fail MANUAL_RECOVERY_INVALID
 exec >> "$TMP_DIR/daemon_stdout.log" 2>&1
-echo 'AP_STARTUP version=1.0.2 phase=PRIVATE_LOG_READY'
+echo 'AP_STARTUP version=1.0.3 phase=PRIVATE_LOG_READY'
 echo $$ > "$TMP_DIR/daemon.pid" || startup_fail PID_WRITE
 ap_phase STARTING
 trap 'ap_power_stop; stop_radio; exit 0' HUP INT TERM
@@ -321,10 +322,16 @@ if [ "$EXTERNAL_DONGLE" != ON ]; then
     while :; do sleep 30 & wait $!; done
 fi
 check_assets || { ap_phase VENDOR_ASSETS_INVALID; startup_fail VENDOR_ASSETS_INVALID; }
-preload_drivers
+MANUAL_RECOVERY_PRELOAD=0
+if [ "${MANUAL_RECOVERY_PENDING:-0}" = 1 ]; then
+    # A recovery request must not wake the USB radio before current power proof.
+    MANUAL_RECOVERY_PRELOAD=1
+else
+    preload_drivers
+fi
 ap_phase WAIT_ANDROID
 while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 2; done
-echo 'AP_STARTUP version=1.0.2 phase=ANDROID_READY' 
+echo 'AP_STARTUP version=1.0.3 phase=ANDROID_READY' 
 ap_power_start
 while :; do
     if ap_power_gate; then
@@ -334,6 +341,15 @@ while :; do
         ap_phase HU_POWER_OFF
         sleep 3 & wait $!
         continue
+    fi
+    if ! ap_manual_recovery_ready; then
+        ap_phase WAIT_POWER_READER
+        sleep 3 & wait $!
+        continue
+    fi
+    if [ "$MANUAL_RECOVERY_PRELOAD" = 1 ]; then
+        preload_drivers
+        MANUAL_RECOVERY_PRELOAD=0
     fi
     if healthy_radio; then
         sleep 3 & wait $!

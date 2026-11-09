@@ -1,0 +1,1 @@
+package android.bluetooth; public class BluetoothDevice {public static final int BOND_BONDED=12;public String address;public int vendor=76,bond=BOND_BONDED;public BluetoothDevice(String a){address=a;}public String getAddress(){return address;}public int getBondState(){return bond;}public int getVendor(){return vendor;}}

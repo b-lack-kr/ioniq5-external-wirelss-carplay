@@ -1,6 +1,6 @@
-공개 1.0.2는 내부 1.0.15 본체를 사용합니다. 공개 설치 기록은 public-release-1.0.2이며, 과거 내부 1.0.2와 구분합니다. 이전 CHANGELOG 번호는 내부 개발 기록입니다.
+공개 1.0.3 소스입니다. 이 배포본은 2026-11-09 확정된 1.0.3 USB 설치 파일에 대응합니다. 설치 기록은 public-release-1.0.3입니다. 이전 CHANGELOG와 문서의 버전 번호는 각 문서가 작성된 당시 기록입니다.
 
-NEEV 260902 USB CarPlay 1.0.15 소스 빌드 / by blackr / 2026-11-08
+NEEV 260902 USB CarPlay 1.0.3 소스 빌드 / by blackr / 2026-11-09
 
 이 소스는 같은 버전의 USB ZIP에 대응합니다. 변경 내용과 미확인 항목은 docs/CHANGELOG-1.0.15-KO.txt, 이전 버전 기록은 docs/VERSION-HISTORY-KO.txt를 확인하세요. 소스 및 빌드·설치 스크립트는 배포 바이너리와 함께 제공해야 합니다. 원저작자·라이선스는 mod/LICENSE 및 licenses/, docs/THIRD-PARTY-NOTICES.txt에 보존돼 있습니다.
 
@@ -16,23 +16,24 @@ python3 tools/rebuild_usb.py --java-home /path/to/jdk17 --android-jar /path/to/a
 새 저자 키가 필요하면 --generate-key를 추가합니다. 기존 키를 덮어쓰지 않습니다. 서명 키와 출력 폴더는 소스 트리 밖에 두세요. 서명자를 바꾸면 기존 by blackr 설치본을 덮어쓸 권한이 생기지 않으며 새 서명에 맞는 신규 설치 대상으로 사용해야 합니다.
 
 출력
-NEEV_260902_CarPlay_1.0.15_USB.zip
+NEEV_260902_CarPlay_1.0.3_USB.zip
 IONIQ5_CarPlay_Mute_Pause_1.1.0_USB.zip (독립 패키지)
 CarPlay ZIP에는 음소거 패키지가 포함되지 않고 설치 여부도 요구하지 않습니다.
 USB ZIP 전체 내용을 루트에 풉니다. Wi-Fi 드라이버와 helper 입력은 docs/EXTERNAL-INPUTS-KO.txt를 따릅니다. 공개 ZIP은 타인의 드라이버·제조사 APK·순정 라이브러리를 내장하지 않습니다. 이미 인증된 외부 동글 자산이 설치된 차량은 이를 유지합니다.
 
 설치와 기록
-- 신규 설치 또는 인증된 이전 버전: NEMESIS 자동 실행에 동의하면 설치합니다.
+- 처음 설치하는 차량: NEMESIS 자동 실행에 동의하면 설치합니다.
+- 기존 공개 1.0.2 등 이전 패키지 사용자는 NEMESIS에서 CarPlay 패키지를 Uninstall한 뒤 설치하세요. NEMESIS와 HMG-API는 유지합니다.
 - 동일한 정확한 버전: 재설치하지 않고 USB에 기록을 수집합니다.
-- 1.0.11/1.0.12/1.0.13/1.0.14에서 갱신: 원본 전체 키트와 서명 매니페스트를 고정 해시로 확인하고, 이전 트랜잭션을 보존합니다. 실패 시 이전 버전으로 복구합니다.
+- 제거된 이전 설치 기록은 검증 후 보관하며, 설치가 완료된 동일한 공개 1.0.3은 재설치하지 않고 로그를 수집합니다.
 - Uninstall 후 설치도 이전 기록을 검증·보관한 뒤 신규 트랜잭션을 생성합니다.
 - 설치 후 재부팅이 필요합니다. AA Java 디코더와 새 메모리 레시피를 이전 GPM 프로세스와 혼용하지 않습니다.
 - 음소거 및 startup4.3.2는 각각 별도 설치·삭제합니다.
 
 검증
 JAVA_HOME=/path/to/jdk17 를 지정하여 tests/test_maneuvers.py, test_lanes.py, test_junction_bridge.py, test_aa.py, test_history.py, test_welcome_power.py, test_power_lifecycle.py, test_vehicle_speed.py, test_settings_policy.py, test_aux_writer.py, test_native_lane_writer.py, test_raw_lane_observer.py, test_raw_lane_gate.py, test_aux_ownership.py 등을 실행합니다. 이 시험은 실제 제품 소스와 호스트 스텁을 사용하며 차량 성공을 대신하지 않습니다. 현재 CP 시험과 보관된 확장 기능 시험의 구분은 tests/CP-BASELINE-1.0.14.txt를 확인하세요.
-python3 tests/test_joint.py /path/to/output/NEEV_260902_CarPlay_1.0.15_USB.zip
-python3 tools/audit_archive.py --profile usb /path/to/output/NEEV_260902_CarPlay_1.0.15_USB.zip
+python3 tests/test_joint.py /path/to/output/NEEV_260902_CarPlay_1.0.3_USB.zip
+python3 tools/audit_archive.py --profile usb /path/to/output/NEEV_260902_CarPlay_1.0.3_USB.zip
 
 새 AA 레시피의 조립·메모리 패치 검증은 ARM Thumb를 지원하는 Android NDK clang/llvm-objcopy와 차량에서 직접 읽은 libautoreceiver_infobank.so가 필요합니다. 원본 MD5는48ee793af8b86052503b8c952b034731, SHA256는eff8c509b0534950b5e7eeac9e4505e3ab92eb5e4cace27371c254281baa2840입니다. 이 파일은 배포하지 않습니다. 검증된 레시피 자체는 일반 USB 빌드에 포함돼 있어 순정 바이너리 없이 빌드 가능합니다.
 

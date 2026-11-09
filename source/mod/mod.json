@@ -1,7 +1,7 @@
 {
   "id": "neev-usb-carplay",
   "name": "IONIQ 5 USB CarPlay",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "hmgapi": ">=1.0.1",
   "authors": [
     "by blackr"
@@ -102,7 +102,9 @@
       "framework.navigation_cluster.update_tbt_trap_info_new": "replace",
       "framework.navigation_cluster.update_clu_data_14": "replace",
       "framework.navigation_cluster.update_clu_data_new_14": "replace",
-      "welcome.service.animation_status": "observe"
+      "welcome.service.animation_status": "observe",
+      "btsettings.usbcp_rows.bind": "observe",
+      "btsettings.usbcp_devices.destroy": "observe"
     },
     "native": {
       "libCarPlayCore.so": [

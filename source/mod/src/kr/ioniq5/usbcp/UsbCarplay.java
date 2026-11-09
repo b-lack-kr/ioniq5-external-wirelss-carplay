@@ -22,7 +22,7 @@ public final class UsbCarplay extends ModEntry {
     @Override public void zygoteInit(ModContext m) throws Throwable {
         if(!Provider.PRODUCT.equals(Provider.property("ro.build.product")) || !"tcc803x".equals(Provider.property("ro.board.platform")))
             throw new IllegalStateException("USB_CP_WRONG_TARGET");
-        m.log("USB_CP_ZYGOTE_READY version=1.0.2");
+        m.log("USB_CP_ZYGOTE_READY version=1.0.3");
     }
     @Override public void appLoaded(final ModContext m, final LoadedApp a) throws Throwable {
         if ("com.mobis.welcome".equals(a.packageName)) {
@@ -54,6 +54,7 @@ public final class UsbCarplay extends ModEntry {
         if(a.context==null || !(DIPO.equals(a.packageName)||IAP2.equals(a.packageName)))return;
         if(android.os.Process.myUid()!=1000)throw new IllegalStateException("USB_CP_APP_UID_MISMATCH");
         mod=m;app=a;main=new Handler(Looper.getMainLooper());
+        m.log("USB_CP_APP_BOOTSTRAP phase=entered package="+a.packageName);
         // Resolve before hooks: install also runs verify-map automatically.
         if(IAP2.equals(a.packageName)) {
             Points.method(a.classLoader,"iap2.service.usbcp_send_wifi");
@@ -66,7 +67,11 @@ public final class UsbCarplay extends ModEntry {
         }},new ApClient.Audit(){public void event(String detail){m.log(detail);}});
         if(IAP2.equals(a.packageName)) iap2();
         else {
-            OemPower.install(m,a);
+            try { OemPower.install(m,a); }
+            catch (Throwable failure) {
+                // The independent root OEM power reader still enforces AP shutdown.
+                m.log("USB_CP_APP_BOOTSTRAP phase=oem_power_hook_failed type="+failure.getClass().getSimpleName());
+            }
             Class<?> part=m.appPart(a,"hmgapi.mods.wireless.dipo.Dipo");
             apChanged=part.getMethod("usbApChanged");
             part.getMethod("startUsb",ModContext.class,LoadedApp.class,Callable.class).invoke(null,m,a,new Callable<Boolean>(){

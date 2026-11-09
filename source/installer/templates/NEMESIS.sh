@@ -6,7 +6,7 @@ umask 077
 USB=${0%/*}; [ "$USB" != "$0" ] || USB=$PWD
 USB=$(cd "$USB" && pwd -P) || exit 2
 W=/data/nemesis/neev-usbcp
-R=$W/public-release-1.0.2
+R=$W/public-release-1.0.3
 H=/data/hmgapi
 ID=neev-usb-carplay
 MOD=$H/mods/$ID
@@ -18,6 +18,8 @@ case "$(id)" in 'uid=0('*|'uid=0 '*|'uid=0') ;; *) exit 2;; esac
 OUT="$USB/NEEV_CP_RESULT_$(date +%Y%m%d_%H%M%S)_$$"
 mkdir "$OUT" || exit 2
 exec > "$OUT/install.log" 2>&1
+@HOOK_DIAGNOSTICS@
+hook_diagnostics > "$OUT/HMG_HOOK_STATUS.txt" 2>/dev/null || :
 notice() { echo "$1"; am broadcast -a com.hkmc.intent.action.TOAST -e com.hkmc.intent.extra.TOAST_MESSAGE "$1" --ez com.hkmc.intent.extra.TOAST_POPUPSHOWING true >/dev/null 2>&1 || :; }
 regular() { [ -f "$1" ] && [ ! -L "$1" ]; }
 absent() { [ ! -e "$1" ] && [ ! -L "$1" ]; }
@@ -68,6 +70,15 @@ check_recorded_kit() { check_kit "$R/kit"; }
 check_101_kit() {
     [ "@OWNER@" = "bd5f651c-38f9-8ef4-827c-34ad706c2b5c" ] &&
         check_kit "$1" 4878be51c37df38b5d1b833c90278342
+}
+# Public 1.0.2 is distinct from the historical internal 1.0.2 transaction.
+# Final published USB SHA256 eb2f41243987676b7a3d81e8096be6d67ab1da2e218f2c1d5d3a2be90489d409.
+# Authenticate all retained kit bytes and the signed mod before parking its history.
+check_public_release_102_kit() {
+    [ "@OWNER@" = "bd5f651c-38f9-8ef4-827c-34ad706c2b5c" ] &&
+        check_kit "$1" 97bf7ec190f1d9d7ed1474f1779a678a &&
+        regular "$1/payload/mod/META-HMGAPI/manifest.json" &&
+        [ "$(hash "$1/payload/mod/META-HMGAPI/manifest.json")" = 3506468513d6f43f454d9ba019c71de3 ]
 }
 # Exact installed 1.0.2 transaction from the map-repair USB build.
 # USB SHA256 f2a1db15cb93cf0625059211087f1c84318bdbde7b9b358a1e05034b4a078d95.
@@ -243,12 +254,24 @@ verify_removed_workspace() {
     regular "$W/UPGRADE_CURRENT.txt" || return 1
     version=$(cat "$W/UPGRADE_CURRENT.txt")
     # Same visible version as an old internal build is not sufficient proof.
-    if [ "$version" = 1.0.2 ] && ! absent "$R"; then
+    if [ "$version" = 1.0.3 ] && ! absent "$R"; then
         record=$R
         dir "$record" && check_recorded_kit && regular "$record/STATUS" &&
             [ "$(cat "$record/STATUS")" = INSTALLED ] && regular "$record/mode" || return 1
         case "$(cat "$record/mode")" in fresh|1.0.1) ;; *) return 1;; esac
         verify_removed_source "$record/kit/payload/mod" "@PUBLIC_MOD_MD5@"
+        return
+    fi
+    # A completed public 1.0.2 uninstall has its own independently pinned kit.
+    # Never fall back to the internal record if that public record is damaged.
+    if [ "$version" = 1.0.2 ] && ! absent "$W/public-release-1.0.2"; then
+        absent "$R" || return 1
+        record=$W/public-release-1.0.2
+        dir "$record" && check_public_release_102_kit "$record/kit" &&
+            regular "$record/STATUS" && [ "$(cat "$record/STATUS")" = INSTALLED ] &&
+            regular "$record/mode" || return 1
+        case "$(cat "$record/mode")" in fresh|1.0.1) ;; *) return 1;; esac
+        verify_removed_source "$record/kit/payload/mod" 3506468513d6f43f454d9ba019c71de3
         return
     fi
     case "$version" in
@@ -370,7 +393,12 @@ if ! dir "$R"; then
     if dir "$MOD" && regular "$W/UPGRADE_CURRENT.txt"; then
         case "$(cat "$W/UPGRADE_CURRENT.txt")" in
             1.0.1) ;;
-            *) stop UNINSTALL_INTERNAL_TEST_VERSION '기존 내부 시험판을 NEMESIS에서 삭제한 뒤 공개 1.0.2를 설치하세요';;
+            1.0.2)
+                if ! absent "$W/public-release-1.0.2"; then
+                    stop UNINSTALL_PREVIOUS_RELEASE 'CarPlay 1.0.2를 NEMESIS에서 삭제한 뒤 1.0.3을 설치하세요'
+                fi
+                stop UNINSTALL_INTERNAL_TEST_VERSION '기존 CarPlay 패키지를 NEMESIS에서 삭제한 뒤 1.0.3을 설치하세요';;
+            *) stop UNINSTALL_INTERNAL_TEST_VERSION '기존 CarPlay 패키지를 NEMESIS에서 삭제한 뒤 1.0.3을 설치하세요';;
         esac
     fi
     if dir "$MOD" && regular "$W/UPGRADE_CURRENT.txt" && [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.0 ]; then
@@ -545,7 +573,7 @@ if ! dir "$R"; then
     echo "$mode" > "$STAGE/mode" && echo PREPARED > "$STAGE/STATUS" && sync || stop STAGING
     if [ "$mode" = fresh ]; then
         FRESH="/data/nemesis/.neev-fresh-$boot-$$"
-        absent "$FRESH" && mkdir "$FRESH" && mv "$STAGE" "$FRESH/public-release-1.0.2" && absent "$W" && mv "$FRESH" "$W" || stop STAGING
+        absent "$FRESH" && mkdir "$FRESH" && mv "$STAGE" "$FRESH/public-release-1.0.3" && absent "$W" && mv "$FRESH" "$W" || stop STAGING
     else mv "$STAGE" "$R" || stop STAGING; fi
 fi
 check_recorded_kit && regular "$R/mode" && regular "$R/STATUS" || stop LOCAL_TRANSACTION_DAMAGED

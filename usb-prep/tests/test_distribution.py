@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 from zipfile import ZipFile
 
-KIT = 'NEEV_260902_CarPlay_1.0.2_USB.zip'
+KIT = 'NEEV_260902_CarPlay_1.0.3_USB.zip'
 DRIVER = 'packages/usbwifi.hotspot.zip'
 VENDOR_HASH = '7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7'
 DRIVER_HASH = 'd9077ba275398c1578444fdea479a5675e21f1b36f9ad3217e57b65aeadc512b'
@@ -64,7 +64,7 @@ def main():
     assert not any('mute-pause' in name for name in core), 'Independent mute capsule bundled'
     assert not any(Path(name).name in ('usbwifi.hotspot.zip','HKG_5W_USBWifi_Hotspot.zip') for name in bundle)
     meta = json.loads(core['NEEV_CP/payload/mod/META-HMGAPI/manifest.json'])
-    assert meta['version'] == '1.0.2'
+    assert meta['version'] == '1.0.3'
     prefix = 'NEEV_CP/payload/mod/'
     assert meta['files'] == {name[len(prefix):]: sha(data) for name,data in core.items()
                              if name.startswith(prefix) and not name.startswith(prefix+'META-HMGAPI/')}

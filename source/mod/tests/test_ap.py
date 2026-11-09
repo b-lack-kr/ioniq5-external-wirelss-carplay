@@ -68,9 +68,9 @@ echo "$family 1 0" >> "$ROOT/proc/modules"''')
         self.cmd('wc','exit 127')
         # Match this car's verified Android toolbox layout (no link-count
         # column). Desktop ls has a different layout and is not proof of ABI.
-        (self.tools/'ls').write_text('#!'+sys.executable+'\nimport os,sys\n'
+        (self.tools/'ls').write_text('#!'+sys.executable+'\nimport os,sys,stat\n'
             'assert len(sys.argv)==3 and sys.argv[1]=="-l"\n'
-            'p=sys.argv[2]\nprint("-rw------- root root %d 2026-11-08 16:00 %s" % (os.stat(p).st_size,p))\n')
+            'p=sys.argv[2];m=os.stat(p)\nprint("%s root root %d 2026-11-08 16:00 %s" % (stat.filemode(m.st_mode),m.st_size,p))\n')
         (self.tools/'ls').chmod(0o755)
         self.cmd('sleep','/bin/sleep 0.03')
         patcher=self.path('/system/bin/app_process')
@@ -215,7 +215,7 @@ ap_running() { [ -f "$ROOT/live-$1" ] && [ ! -f "$ROOT/fail-$1" ]; }
         self.assertEqual(((self.work/'hostapd.conf').stat().st_mode & 0o777), 0o600)
         self.assertEqual(((self.work/'entropy.bin').stat().st_mode & 0o777), 0o600)
         self.assertIn('AP_DRIVER state=ready family=88x2bu', self.log())
-        self.assertIn('AP_STARTUP version=1.0.2 phase=ENTRY', self.supervisor.read_text())
+        self.assertIn('AP_STARTUP version=1.0.3 phase=ENTRY', self.supervisor.read_text())
     def test_fresh_t3u_012d(self): self.assert_fresh_t3u('012d')
     def test_fresh_t3u_0138(self): self.assert_fresh_t3u('0138')
     def test_fresh_t3u_0115(self): self.assert_fresh_t3u('0115')
@@ -273,6 +273,80 @@ exec /usr/bin/grep "$@"''')
         self.assertIn('AP_STARTUP_FAILURE reason=PREPARE_PATHS',self.supervisor.read_text())
         self.assertEqual(target.read_text(),'unchanged')
         self.assertFalse((self.root/'driver').exists())
+
+    def manual_recovery(self, boot=BOOT, stamp='1000'):
+        marker = self.base/'manual-ap-recovery'
+        marker.write_text(f'{boot} {stamp}\n')
+        marker.chmod(0o600)
+        return marker
+
+    def test_manual_recovery_waits_for_new_reader_then_preserves_credentials(self):
+        self.mock_power_reader();self.power('ON');self.manual_recovery()
+        before=(self.base/'config/hotspot.conf').read_bytes()
+        self.attach();self.start();self.phase('WAIT_POWER_READER')
+        self.assertFalse((self.root/'launch').exists())
+        self.assertFalse((self.root/'driver').exists())
+        # An initial old ON file is fresh but predates this service instance.
+        time.sleep(.1);self.assertFalse((self.root/'launch').exists())
+        self.path('/proc/uptime').write_text('1003.25 2000.00\n')
+        self.power('ON',stamp='1002',decision='0');self.phase('SERVICES_RUNNING')
+        self.assertEqual((self.base/'config/hotspot.conf').read_bytes(),before)
+        self.assertIn('AP_MANUAL_RECOVERY state=POWER_CONFIRMED',self.log())
+
+    def test_manual_recovery_unknown_or_dead_reader_never_starts_radio(self):
+        self.mock_power_reader();self.manual_recovery();self.power('UNKNOWN')
+        self.attach();self.start();self.phase('WAIT_POWER_READER')
+        self.assertFalse((self.root/'launch').exists())
+        self.assertFalse((self.root/'driver').exists())
+        self.path('/proc/uptime').write_text('1003.25 2000.00\n')
+        self.power('ON',stamp='999',decision='0');time.sleep(.15)
+        self.assertFalse((self.root/'launch').exists())
+
+    def test_manual_recovery_goodbye_off_remains_dominant(self):
+        self.mock_power_reader();self.manual_recovery();self.event('OFF','1000000000000')
+        self.power('ON',stamp='1000',decision='0');self.attach();self.start();self.phase('HU_POWER_OFF')
+        event=(self.tmp/'power-event').read_bytes()
+        self.path('/proc/uptime').write_text('1003.25 2000.00\n')
+        self.power('ON',stamp='1002',decision='0');time.sleep(.15)
+        self.assertFalse((self.root/'launch').exists())
+        self.assertEqual((self.tmp/'power-event').read_bytes(),event)
+        # Only an actual newer power ON decision releases the ordinary OFF gate.
+        self.event('ON','1002000000000');self.phase('SERVICES_RUNNING')
+
+    def test_manual_recovery_old_boot_does_not_change_normal_boot(self):
+        self.manual_recovery(OTHER_BOOT,'999999999')
+        self.attach();self.start();self.phase('SERVICES_RUNNING')
+        self.assertNotIn('WAIT_POWER_READER',self.log())
+
+    def test_manual_recovery_future_request_refuses_radio(self):
+        self.mock_power_reader();self.manual_recovery(stamp='1001')
+        self.attach();self.start();self.wait_for(lambda:self.child.poll() is not None)
+        self.assertEqual(self.child.returncode,3)
+        self.assertIn('MANUAL_RECOVERY_INVALID',self.supervisor.read_text())
+        self.assertFalse((self.root/'launch').exists())
+
+    def test_manual_recovery_permissions_and_extra_lines_refuse_radio(self):
+        self.mock_power_reader();marker=self.manual_recovery();marker.chmod(0o644)
+        self.attach();self.start();self.wait_for(lambda:self.child.poll() is not None)
+        self.assertEqual(self.child.returncode,3);self.assertFalse((self.root/'launch').exists())
+        marker.chmod(0o600);marker.write_text(f'{BOOT} 1000\nextra\n')
+        self.start();self.wait_for(lambda:self.child.poll() is not None)
+        self.assertEqual(self.child.returncode,3);self.assertFalse((self.root/'launch').exists())
+
+    def test_manual_recovery_symlink_refuses_without_writing_target(self):
+        target=self.root/'keep';target.write_text('unchanged')
+        (self.base/'manual-ap-recovery').symlink_to(target)
+        self.attach();self.start();self.wait_for(lambda:self.child.poll() is not None)
+        self.assertEqual(self.child.returncode,3)
+        self.assertEqual(target.read_text(),'unchanged')
+        self.assertFalse((self.root/'launch').exists())
+
+    def test_manual_recovery_live_radio_does_not_read_new_request(self):
+        self.attach();self.start();self.phase('SERVICES_RUNNING')
+        launches=(self.root/'launch').read_text()
+        self.manual_recovery(stamp='2000000');time.sleep(.15)
+        self.assertEqual((self.root/'launch').read_text(),launches)
+        self.assertNotIn('WAIT_POWER_READER',self.log())
 
     def mock_power_reader(self):
         # Exercise the real freshness/parser/gate functions. Only the Android

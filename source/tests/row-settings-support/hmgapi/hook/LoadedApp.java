@@ -1,0 +1,1 @@
+package hmgapi.hook;public class LoadedApp {public String packageName="com.android.btsettings",processName=packageName;public android.content.Context context=new android.content.Context();public ClassLoader classLoader=LoadedApp.class.getClassLoader();}

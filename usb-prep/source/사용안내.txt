@@ -1,4 +1,4 @@
-IONIQ 5 USB 무선 CarPlay 1.0.2 · by blackr
+IONIQ 5 USB 무선 CarPlay 1.0.3 · by blackr
 
 대상: 한국 NEEV 260902 / tcc803x, NEMESIS, HMG-API 1.0.1 이상과 활성화된 Hooks, 지원하는 5GHz USB Wi-Fi 동글.
 기준 차량은 2023MY IONIQ5이며 Archer T3U Nano를 사용했습니다. 다른 차종/펌웨어는 이 패키지 대상이 아닙니다.
@@ -21,16 +21,18 @@ Windows: powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Prepare-USB
 USB_READY 안의 모든 항목을 USB 최상위에 복사합니다. 같은 폴더에 있는 차량용 ZIP을 사용할 수 있으며, 없으면 공식 릴리스에서 받습니다. 동글 파일은 GRT47 v2.0.2 원본을 공식 GitHub에서 받고 SHA-256을 확인합니다.
 
 기존 설치
-공개판 CarPlay 1.0.1은 삭제하지 않고 1.0.2로 업데이트할 수 있습니다. 기존 Wi-Fi 이름과 암호를 유지합니다.
+이전 CarPlay 패키지가 설치되어 있다면 NEMESIS의 My Packages에서 해당 CarPlay 패키지를 Uninstall한 뒤 설치하세요. NEMESIS와 HMG-API는 유지합니다.
 CarPlay가 설치되지 않은 차량은 신규 설치합니다. NEMESIS와 HMG-API 자체를 삭제할 필요는 없습니다.
 이미 설치된 별도 음소거 패키지는 이 설치본이 설치·업데이트·제거하지 않습니다.
-같은 1.0.2 설치를 완료한 뒤 같은 USB를 다시 실행하면 재설치 대신 로그를 수집합니다.
+같은 1.0.3 설치를 완료한 뒤 같은 USB를 다시 실행하면 재설치 대신 로그를 수집합니다.
 
 설치와 사용
-1. 주차 상태에서 내비 부팅 후 USB를 데이터 포트에 꽂고 NEMESIS 확인창에서 Yes를 누릅니다.
-2. Operation completed successfully와 최종 설치 완료를 기다립니다.
-3. USB를 5GHz 동글로 바꾸고 내비를 재부팅합니다. 정상 부팅·동글 시작·연결 대기 팝업은 표시하지 않습니다.
-4. 아이폰에서 Bluetooth와 Wi-Fi를 켜고 차량 폰 프로젝션에서 CarPlay를 연결합니다.
+1. 차량의 기기 연결 설정에서 기존 휴대전화 등록을 삭제합니다. 아이폰의 설정 → Bluetooth → 차량 옆 정보 버튼 → 이 기기 지우기, 설정 → 일반 → CarPlay → 기존 차량 → 이 자동차 지우기도 진행합니다.
+2. 주차 상태에서 내비 부팅 후 USB를 데이터 포트에 꽂고 NEMESIS 확인창에서 Yes를 누릅니다.
+3. Operation completed successfully와 최종 설치 완료를 기다립니다.
+4. USB를 5GHz 동글로 바꾸고 내비를 재부팅합니다. 정상 부팅·동글 시작·연결 대기 팝업은 표시하지 않습니다.
+5. 아이폰에서 Bluetooth와 Wi-Fi를 켜고 차량 Bluetooth를 새로 등록합니다. CarPlay 연결 확인창에서 연결을 선택합니다.
+연결 확인창이 나타나지 않으면 기기 연결 설정의 CarPlay 버튼으로 연결을 다시 시도할 수 있습니다.
 신규 설치는 Hyundai_숫자6자리 이름과 암호를 새로 만듭니다. Wi-Fi 암호를 수동 입력할 필요는 없습니다. 이전 등록으로 연결되지 않으면 차량과 아이폰의 CarPlay 등록 상태를 확인한 뒤 다시 등록하세요.
 
 기록과 복구
@@ -38,6 +40,6 @@ CarPlay가 설치되지 않은 차량은 신규 설치합니다. NEMESIS와 HMG-
 CarPlay 복구는 USB 루트에 NEEV-CP-RESTORE라는 빈 파일을 만든 후 실행하고 재부팅합니다. 이 복구는 독립된 음소거 모드를 제거하지 않습니다. 복구 후 재설치하려면 해당 빈 파일을 지우세요.
 
 릴리스
-https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/tag/v1.0.2
+https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/tag/v1.0.3
 별도 음소거 패키지: https://github.com/b-lack-kr/ioniq5-carplay-mute-pause/releases
 소스 빌드 안내와 제3자 고지는 SOURCE.zip에 있습니다. GRT47 구성요소는 준비 도구가 공식 원본에서 별도로 받으며 배포 ZIP에 포함하지 않습니다.

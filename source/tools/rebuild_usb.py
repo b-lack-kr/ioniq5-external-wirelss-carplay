@@ -46,7 +46,7 @@ def main():
     owner=json.loads((out/'mod/payload/META-HMGAPI/manifest.json').read_text())['uuid']
     run(sys.executable,root/'installer/build_installer.py','--mod',out/'mod/payload','--setup-jar',out/'support/setup.jar',
         '--maps',root/'maps','--target',root/'target/TARGET.md5','--vendor-dir',out/'vendor/build','--out',out/'cp-usb','--uuid',owner)
-    zipout=out/'NEEV_260902_CarPlay_1.0.2_USB.zip'
+    zipout=out/'NEEV_260902_CarPlay_1.0.3_USB.zip'
     run(sys.executable,root/'release/build.py','--installer',out/'cp-usb','--owner',owner,'--out',zipout)
     shutil.copyfile(a.mute_usb.resolve() if a.mute_usb else out/'support/mute-usb.zip',out/'IONIQ5_CarPlay_Mute_Pause_1.1.0_USB.zip')
     run(sys.executable,root/'tools/audit_archive.py','--profile','usb',zipout)

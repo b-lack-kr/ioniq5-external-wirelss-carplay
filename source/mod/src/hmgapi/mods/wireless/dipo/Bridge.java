@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.net.wifi.WifiConfiguration;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.SystemClock;
 
 import com.broadcom.bt.hfdevice.hfbtcm.HfDeviceBTCMManager;
 import com.broadcom.bt.hfdevice.hfbtcm.HfDeviceStatusListener;
@@ -71,6 +72,12 @@ final class Bridge {
     // Invalidates delayed work from a phone or CarPlay session that has ended.
     private static volatile long sEpoch;
     private static volatile String sScheduledAddr;
+    private static final ManualRetryState manual = new ManualRetryState();
+    private static volatile String manualSppAddress;
+    private static volatile long manualSppRequest;
+    private static long manualAuthorizationUntil;
+    private static volatile long btAttachStartedAt;
+    private static final long STALE_BT_ATTACH_MS = 30000;
     // The KR head unit reports transport 0 even during a dongle CarPlay session.
     // Carry proof of our own BT attach, acknowledged by iAP2 for the same phone,
     // into a single session_created callback. A raw 0 by itself is still wired.
@@ -118,6 +125,7 @@ final class Bridge {
         boolean attached = sSession || sCpClient;
         invalidatePending();
         sSession = false; sCpClient = false; sCpConnected = false; sCpWireless = false;
+        btAttachStartedAt = 0;
         sAddr = null; sCp = null; sLastBtId = null;
         synchronized (sPendingIn) { sPendingIn.clear(); }
         if (attached) sendDetach();
@@ -223,48 +231,204 @@ final class Bridge {
         if (addr == null || !enabled() || sUsb || sCpWireless || sCpClient || sSession) return;
         if (addr.equals(sScheduledAddr)) return;
         final long epoch = sEpoch;
+        final long manualRequest = manual.pending(addr, SystemClock.elapsedRealtime()) ? manual.generation() : -1;
         sScheduledAddr = addr;
         handler().postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    synchronized (Bridge.class) {
-                        if (epoch != sEpoch || !addr.equals(sScheduledAddr)) return;
-                        sScheduledAddr = null;
-                    }
-                    HfDeviceBTCMManager m = sBtcm;
-                    if (m == null || sUsb || sSession || sCpWireless || sCpClient || !enabled()) return;
-                    BluetoothDevice phone = currentHfpBonded(addr);
-                    if (phone == null) {
-                        if (attempt < 4) scheduleSppConnect(addr, attempt + 1);
-                        else log("USB_CP_RETRY_EXHAUSTED phone_not_current_or_bonded");
-                        return;
-                    }
-                    int identity = appleIdentity(phone);
-                    if (identity < 0) { log("USB_CP_RETRY_SKIPPED other_vendor"); return; }
-                    if (identity == 0 || !apReady()) {
-                        if (attempt < 4) scheduleSppConnect(addr, attempt + 1);
-                        else log("USB_CP_RETRY_EXHAUSTED identity_or_ap_not_ready");
-                        return;
-                    }
-                    if (m.IbtcmIsSppConnectedDevice(addr)) onSppUp(addr);
-                    else if (!m.IbtcmSppConnect(addr)) {
-                        if (attempt < 4) scheduleSppConnect(addr, attempt + 1);
-                        else log("USB_CP_RETRY_EXHAUSTED spp_request_rejected");
-                    }
-                } catch (Throwable t) {
-                    error("sppConnect", t);
+            @Override public void run() {
+                synchronized (Bridge.class) {
+                    if (epoch != sEpoch || !addr.equals(sScheduledAddr)) return;
+                    sScheduledAddr = null;
                 }
+                final Runnable attemptWork = new Runnable() { public void run() { attemptSppConnect(addr, attempt, epoch); }};
+                // A request can adopt the existing automatic scheduled attempt.
+                // A queued manual attempt cannot become automatic after expiry.
+                boolean pending = manual.pending(addr, SystemClock.elapsedRealtime());
+                if (manualRequest >= 0 && (!pending || manualRequest != manual.generation())) return;
+                if (pending) ManualConnectServer.guard(addr, epoch, manual.generation(), attemptWork);
+                else attemptWork.run();
             }
         }, SPP_CONNECT_DELAY_MS);
     }
 
+    /** Existing bounded SPP flow, shared by automatic and explicitly authorized retries. */
+    static void attemptSppConnect(final String addr, final int attempt, final long epoch) {
+        try {
+            if (epoch != sEpoch) return;
+            HfDeviceBTCMManager m = sBtcm;
+            if (m == null || sUsb || sSession || sCpWireless || sCpClient || !enabled()) return;
+            BluetoothDevice phone = currentHfpBonded(addr);
+            if (phone == null) {
+                if (attempt < 4) scheduleSppConnect(addr, attempt + 1);
+                else { log("USB_CP_RETRY_EXHAUSTED phone_not_current_or_bonded"); manualFailure(addr, ManualWire.PHONE_REQUIRED); }
+                return;
+            }
+            int identity = appleIdentity(phone);
+            if (identity < 0) { log("USB_CP_RETRY_SKIPPED other_vendor"); manualFailure(addr, ManualWire.NOT_APPLE); return; }
+            if (identity == 0 || !apReady()) {
+                if (attempt < 4) scheduleSppConnect(addr, attempt + 1);
+                else { log("USB_CP_RETRY_EXHAUSTED identity_or_ap_not_ready"); manualFailure(addr, ManualWire.AP_UNAVAILABLE); }
+                return;
+            }
+            manualSppAddress = manual.pending(addr, SystemClock.elapsedRealtime()) ? addr : null;
+            manualSppRequest = manual.generation();
+            boolean sppConnected = m.IbtcmIsSppConnectedDevice(addr);
+            if (manual.pending(addr, SystemClock.elapsedRealtime()) &&
+                    SystemClock.elapsedRealtime() > manualAuthorizationUntil) {
+                manualFailure(addr, ManualWire.TIMED_OUT); return;
+            }
+            if (sppConnected) onSppUp(addr);
+            else if (!m.IbtcmSppConnect(addr)) {
+                if (attempt < 4) scheduleSppConnect(addr, attempt + 1);
+                else { log("USB_CP_RETRY_EXHAUSTED spp_request_rejected"); manualFailure(addr, ManualWire.FAILED); }
+            }
+        } catch (Throwable t) {
+            manualFailure(addr, ManualWire.FAILED);
+            error("sppConnect", t);
+        }
+    }
+
+    /** Called only by our handler after the authenticated server's read-only gate. */
+    static ManualWire.Result manualControl(String address, int action, int gate) {
+        return manualControl(address, action, gate, SystemClock.elapsedRealtime() + 350);
+    }
+
+    static ManualWire.Result manualControl(String address, int action, int gate, long deadline) {
+        long now = SystemClock.elapsedRealtime();
+        BluetoothDevice phone = currentHfpBonded(address);
+        if (SystemClock.elapsedRealtime() > deadline) return new ManualWire.Result(ManualWire.TIMED_OUT, 0);
+        boolean active = sCp != null || sCpWireless || sCpClient;
+        boolean target = address.equals(sAddr);
+        int flags = (phone != null ? ManualWire.CURRENT_HFP : 0)
+            | (active ? ManualWire.ACTIVE_CP : 0) | (active && target ? ManualWire.ACTIVE_TARGET : 0)
+            | (manual.pending(address, now) ? ManualWire.PENDING_TARGET : 0);
+        // Provider and this process observe AP state asynchronously.
+        if (gate == ManualWire.READY && !apReady()) gate = ManualWire.AP_UNAVAILABLE;
+        if (gate == ManualWire.AP_UNAVAILABLE) {
+            // Let the stock phone button establish HFP first; an unavailable AP
+            // must not hide the ordinary registered-phone selection flow.
+            if (phone == null && !active && !sSession && !sUsb && enabled())
+                return new ManualWire.Result(ManualWire.PHONE_REQUIRED, flags);
+            // Only a click may begin preparation. A query can only observe that
+            // same pending request; it cannot start services or reset a session.
+            if (manual.pending(address, now)) return new ManualWire.Result(ManualWire.ACCEPTED, flags);
+            if (action == ManualWire.RETRY && enabled() && !sUsb && !active && !sSession
+                    && phone != null && isApple(phone) && manual.begin(address, now)) {
+                final String selected=address;final long epoch=sEpoch, request=manual.generation();
+                ManualConnectServer.guard(selected,epoch,request,new Runnable(){public void run(){scheduleSppConnect(selected);}});
+                log("USB_CP_MANUAL event=preparing_ap");
+                return new ManualWire.Result(ManualWire.ACCEPTED, flags|ManualWire.PENDING_TARGET);
+            }
+        }
+        if (gate != ManualWire.READY) return new ManualWire.Result(gate, flags);
+        if (!enabled()) return new ManualWire.Result(ManualWire.DISABLED, flags);
+        if (!apReady()) return new ManualWire.Result(ManualWire.AP_UNAVAILABLE, flags);
+        if (sUsb) return new ManualWire.Result(ManualWire.BUSY, flags);
+        // Actual wireless transport/session proof, not merely an accepted retry.
+        if (active && target && sCp != null && sCpWireless) {
+            manualFailure(address, ManualWire.CONNECTED);
+            return new ManualWire.Result(ManualWire.CONNECTED, flags & ~ManualWire.PENDING_TARGET);
+        }
+        // A half-open BT/iAP attachment is not a live CarPlay session. Only a
+        // new explicit click for the same bonded HFP phone may retire it after
+        // the initial handshake window. Passive queries and other phones do not.
+        boolean staleAttach = sSession && !active && !sCpConnected && target && phone != null
+            && btAttachStartedAt > 0 && now >= btAttachStartedAt
+            && now - btAttachStartedAt >= STALE_BT_ATTACH_MS;
+        if (staleAttach && action == ManualWire.QUERY)
+            return new ManualWire.Result(ManualWire.READY, flags);
+        if (staleAttach && action == ManualWire.RETRY && sIap2 != null
+                && !manual.pending(address, now)) {
+            if (SystemClock.elapsedRealtime() > deadline)
+                return new ManualWire.Result(ManualWire.TIMED_OUT, flags);
+            resetPhone("manual_stale_bt_attach");
+            manualSppAddress = null;
+        }
+        if (active || sSession) {
+            int status = target && manual.pending(address, now) ? ManualWire.ACCEPTED : ManualWire.BUSY;
+            return new ManualWire.Result(status, flags);
+        }
+        if (phone == null) return new ManualWire.Result(ManualWire.PHONE_REQUIRED, flags);
+        if (!isApple(phone)) return new ManualWire.Result(ManualWire.NOT_APPLE, flags);
+        if (action == ManualWire.QUERY) {
+            int last = manual.status(address, now);
+            // Above checks describe current power/AP/phone authority. A previous
+            // OFF or unavailable result must not impersonate a still-closed gate
+            // after it has recovered and prevent a new explicit user retry.
+            if (last == ManualWire.CONNECTED) last = ManualWire.READY;
+            else if (last != ManualWire.READY && last != ManualWire.ACCEPTED && last != ManualWire.TIMED_OUT)
+                last = ManualWire.FAILED;
+            return new ManualWire.Result(last, flags);
+        }
+        if (manual.pending(address, now)) return new ManualWire.Result(ManualWire.ACCEPTED, flags);
+        if (sIap2 == null) {
+            if(!manual.begin(address,now))return new ManualWire.Result(ManualWire.BUSY,flags);
+            final String selected=address;final long epoch=sEpoch, request=manual.generation();
+            ManualConnectServer.guard(selected,epoch,request,new Runnable(){public void run(){scheduleSppConnect(selected);}});
+            log("USB_CP_MANUAL event=preparing_iap");
+            return new ManualWire.Result(ManualWire.ACCEPTED,flags|ManualWire.PENDING_TARGET);
+        }
+        if (SystemClock.elapsedRealtime() > deadline) return new ManualWire.Result(ManualWire.TIMED_OUT, flags);
+        if (!manual.begin(address, now)) return new ManualWire.Result(ManualWire.BUSY, flags);
+        log("USB_CP_MANUAL event=accepted");
+        scheduleSppConnect(address);
+        return new ManualWire.Result(ManualWire.ACCEPTED, flags | ManualWire.PENDING_TARGET);
+    }
+
+    static void manualFailure(String address, int status) {
+        if (manual.pending(address, SystemClock.elapsedRealtime())) {
+            manual.finish(address, status);
+            log("USB_CP_MANUAL event=finished status=" + status);
+        }
+    }
+
+    static void manualAttempt(String address, long epoch, long request, int gate, long observed, Runnable work) {
+        long now = SystemClock.elapsedRealtime();
+        if (request != manual.generation() || !manual.pending(address, now)) return;
+        // Duplicate SPP callbacks may have queued two gate checks. The first
+        // successful attach advances the epoch; the second is harmless progress,
+        // not a failure of the same selected phone's in-flight session.
+        if (address.equals(sAddr) && (sSession || sCpClient || sCpWireless || sCp != null)) return;
+        if (epoch != sEpoch) { manualFailure(address, ManualWire.BUSY); return; }
+        if (now < observed || now - observed > 350) { manualFailure(address, ManualWire.TIMED_OUT); return; }
+        if (gate == ManualWire.AP_UNAVAILABLE || (gate == ManualWire.READY && (!apReady() || sIap2 == null))) {
+            if(!enabled() || sUsb) { manualFailure(address, ManualWire.BUSY); return; }
+            final String selected=address;final long token=epoch, generation=request;final Runnable next=work;
+            handler().postDelayed(new Runnable(){public void run(){
+                if(manual.pending(selected,SystemClock.elapsedRealtime())&&manual.generation()==generation)
+                    ManualConnectServer.guard(selected,token,generation,next);
+            }},1000);
+            return;
+        }
+        if (gate != ManualWire.READY) { manualFailure(address, gate); return; }
+        if (!enabled() || sUsb || sSession || sCpWireless || sCpClient || sCp != null) {
+            manualFailure(address, ManualWire.BUSY); return;
+        }
+        if (!apReady()) { manualFailure(address, ManualWire.AP_UNAVAILABLE); return; }
+        if (currentBondedPhone(address) == null) { manualFailure(address, ManualWire.PHONE_REQUIRED); return; }
+        if (SystemClock.elapsedRealtime() - observed > 350) { manualFailure(address, ManualWire.TIMED_OUT); return; }
+        manualAuthorizationUntil = observed + 350;
+        try { work.run(); } finally { manualAuthorizationUntil = 0; }
+    }
+
     static void onSppUp(final String addr) {
+        if (sSession || sCpClient || sCpWireless) return;
+        // Native SPP callbacks can arrive after a request timed out or after OFF.
+        // Only a same-request, freshly authorized callback may continue a manual attempt.
+        if (addr != null && addr.equals(manualSppAddress)) {
+            if (!manual.pending(addr, SystemClock.elapsedRealtime()) || manualSppRequest != manual.generation()) return;
+            ManualConnectServer.guard(addr, sEpoch, manualSppRequest, new Runnable() {
+                public void run() { onSppUpAuthorized(addr); }
+            });
+        } else onSppUpAuthorized(addr);
+    }
+
+    static void onSppUpAuthorized(final String addr) {
         if (addr == null || sSession || currentBondedPhone(addr) == null) return;
         if (sCpClient || sCpWireless || !enabled() || sUsb || !apReady()) return;
         sAddr = addr;
         final long epoch = invalidatePending();
         sSession = true;
+        btAttachStartedAt = SystemClock.elapsedRealtime();
         handler().post(new Runnable() {
             @Override
             public void run() {
@@ -286,7 +450,7 @@ final class Bridge {
                     i.putExtra("serial", addr);
                     sRequestedBtEpoch = epoch;
                     c.sendBroadcast(i);
-                    log("BT_ATTACHED sent for " + addr);
+                    log("USB_CP_LIFECYCLE attach_requested=1");
                 } catch (Throwable t) {
                     sSession = false;
                     error("onSppUp", t);
