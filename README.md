@@ -28,6 +28,8 @@ GitHub [1.0.2 릴리스](https://github.com/b-lack-kr/ioniq5-external-wirelss-ca
 
 **1.0.1은 패키지를 삭제하지 않고 업데이트**할 수 있습니다. 이미 설치된 음소거 패키지의 상태도 유지합니다. **1.0.0 사용자는 CarPlay 패키지만** NEMESIS에서 **Uninstall**하고 남아 있는 **Apply changes**를 적용한 뒤 아래 설치를 진행하세요. NEMESIS와 HMG-API 자체는 삭제하지 않습니다. 처음 설치하는 사용자는 아래 순서대로 진행하면 됩니다.
 
+**기존 CarPlay 패키지를 Uninstall한 뒤 새로 설치하는 방식도 지원합니다.** `UNOWNED_REMOVED_SETUP` 오류가 났다면 2026-11-09 수정된 준비 도구 ZIP을 다시 다운로드해 USB를 준비하세요. 설치된 상태에서 같은 USB를 다시 연결하면 재설치 대신 로그를 수집합니다.
+
 1. USB 자료를 백업하고 준비 도구 ZIP을 PC 내부 저장 공간에 풉니다.
 2. Windows는 `Prepare-USB-Windows.cmd`를 관리자 권한으로, Mac은 `USB-준비-macOS.command`를 실행합니다.
 3. USB 이름·용량을 확인하고 대상 볼륨을 선택한 뒤 확인 문구를 입력합니다. **기존 파일·폴더를 삭제하고 설치 파일만 복사합니다.** 파티션 생성·포맷은 하지 않습니다. 준비와 파일 검증이 끝나면 안전하게 추출합니다.

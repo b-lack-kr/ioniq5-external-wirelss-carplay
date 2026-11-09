@@ -55,7 +55,7 @@ def native_package(wrapper,launcher):
         common=common.replace(key,value)
     files['scripts/common.sh']=common.encode()
     for name,data in files.items():
-        assert not re.search(rb'@[A-Z_]+@',data)
+        assert not re.search(rb'@[A-Z][A-Z0-9_]*@',data)
         if name.endswith('.sh'):
             subprocess.run(['/bin/sh','-n'],input=data,check=True)
     return zipbytes(files)
@@ -72,7 +72,7 @@ def automatic_usb(files):
     for key,value in pins.items():
         assert key in script,key
         script=script.replace(key,value)
-    assert not re.search(r'@[A-Z_]+@',script)
+    assert not re.search(r'@[A-Z][A-Z0-9_]*@',script)
     subprocess.run(['/bin/sh','-n'],input=script,text=True,check=True)
     files['USB_AUTO.sh']=script.encode()
     files['NEMESIS.data']=b'[nemesis]\nversion=1.1\ntype=execute\npath=USB_AUTO.sh\n'
@@ -84,6 +84,11 @@ def build(cpdir,owner,out):
     for f in cpdir.rglob('*'):
         if f.is_symlink(): raise ValueError(f'Symlink: {f.name}')
         if f.is_file(): files[f.relative_to(cpdir).as_posix()]=f.read_bytes()
+    for name, data in files.items():
+        if name.endswith('.sh'):
+            token = re.search(rb'@[A-Z][A-Z0-9_]*@', data)
+            if token:
+                raise ValueError(f'Unresolved installer token in {name}: {token.group().decode()}')
     assert set(n.split('/')[0] for n in files)=={'NEEV_CP','NEMESIS.sh','NEMESIS.data'}
     prefix='NEEV_CP/payload/mod/'
     cp={n[len(prefix):]:v for n,v in files.items() if n.startswith(prefix)}
@@ -99,7 +104,7 @@ def build(cpdir,owner,out):
     for k,v in replacements.items():
         assert k in wrapper,k
         wrapper=wrapper.replace(k,v)
-    assert not re.search(r'@[A-Z_]+@',wrapper)
+    assert not re.search(r'@[A-Z][A-Z0-9_]*@',wrapper)
     subprocess.run(['/bin/sh','-n'],input=wrapper,text=True,check=True)
     files.update({'NEMESIS.sh':wrapper.encode(),'NEEV_CP_INSTALL.sh':original,
                   package_name:native_package(wrapper.encode(),original),
