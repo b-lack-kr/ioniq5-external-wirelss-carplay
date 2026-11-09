@@ -101,6 +101,24 @@ try {
         catch { $oldFailed = $true; Write-Host ('Original expression fails: ' + $_.Exception.Message) }
         if ($PSVersionTable.PSVersion.Major -eq 5) { Assert $oldFailed 'Original GUID-root CreateDirectory failure was not reproduced.' }
         Put (Join-Path $driveRoot 'System Volume Information/test-metadata') 'preserve metadata'
+        $journalPath = Join-Path $driveRoot '$TXRAJNL.DAT'
+        # A directory with the metadata file's name is not an exemption.
+        Put (Join-Path $journalPath 'ordinary.txt') 'ordinary folder content'
+        $shapePlan = Get-UsbContentPlan $driveRoot
+        Assert ($shapePlan.Preserved -cnotcontains '$TXRAJNL.DAT') 'A metadata-named directory was exempted.'
+        Assert (@($shapePlan.Directories | Where-Object { $_.FullName -ceq $journalPath }).Count -eq 1) 'Metadata-named directory was omitted from cleanup.'
+        [IO.Directory]::Delete($journalPath, $true)
+        Put $journalPath ('preserve journal ' * 65536)
+        [IO.File]::SetAttributes($journalPath, [IO.FileAttributes]([int][IO.FileAttributes]::ReadOnly -bor [int][IO.FileAttributes]::Hidden))
+        $journalAttributes = [IO.File]::GetAttributes($journalPath)
+        $journalHash = (Get-FileHash -LiteralPath $journalPath -Algorithm SHA256).Hash
+        Put (Join-Path $driveRoot 'old/$TXRAJNL.DAT') 'nested ordinary file'
+        Put (Join-Path $driveRoot '$TXRAJNL.DAT.bak') 'lookalike ordinary file'
+        $journalPlan = Get-UsbContentPlan $driveRoot
+        Assert ($journalPlan.Preserved -ccontains '$TXRAJNL.DAT') 'Root journal was not preserved.'
+        Assert (@($journalPlan.Files | Where-Object { $_.FullName -ceq $journalPath }).Count -eq 0) 'Root journal remained a deletion target.'
+        Assert (@($journalPlan.Files | Where-Object { $_.Name -ceq '$TXRAJNL.DAT' }).Count -eq 1) 'Nested journal-named file was incorrectly exempted.'
+        Assert (@($journalPlan.Files | Where-Object { $_.Name -ceq '$TXRAJNL.DAT.bak' }).Count -eq 1) 'Lookalike filename was incorrectly exempted.'
         Put (Join-Path $driveRoot 'old/old.txt') 'delete old'
         Put (Join-Path $driveRoot '.hidden') 'delete hidden'
         Put (Join-Path $driveRoot 'NEMESIS.data') 'old trigger'
@@ -132,6 +150,10 @@ try {
             Assert (![IO.File]::Exists((Join-Path $driveRoot 'old/old.txt'))) 'Old file survived.'
             Assert (![IO.File]::Exists((Join-Path $driveRoot '.hidden'))) 'Old hidden file survived.'
             Assert ([IO.File]::ReadAllText((Join-Path $driveRoot 'System Volume Information/test-metadata')) -ceq 'preserve metadata') 'OS metadata changed.'
+            Assert ((Get-FileHash -LiteralPath $journalPath -Algorithm SHA256).Hash -ceq $journalHash) 'Root journal contents changed.'
+            Assert ([IO.File]::GetAttributes($journalPath) -eq $journalAttributes) 'Root journal attributes changed.'
+            Assert (![IO.File]::Exists((Join-Path $driveRoot 'old/$TXRAJNL.DAT'))) 'Nested journal-named file survived cleanup.'
+            Assert (![IO.File]::Exists((Join-Path $driveRoot '$TXRAJNL.DAT.bak'))) 'Lookalike filename survived cleanup.'
             $after = Get-Volume -Partition (Get-Partition -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber)
             Assert ($after.Path -ceq $root -and $after.FileSystem -ieq $fileSystem -and $after.FileSystemLabel -ceq 'CP_TEST') 'Writer changed volume identity, filesystem or label.'
         }

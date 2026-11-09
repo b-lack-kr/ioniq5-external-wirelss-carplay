@@ -109,6 +109,14 @@ function Get-UsbContentPlan([string]$root) {
                 $directories.Add($item)
                 $pending.Push($item)
             } else {
+                # Preserve only this exact regular metadata file at the volume
+                # root. Reparse points were rejected above; lookalike names and
+                # nested files remain ordinary cleanup targets.
+                if ($directory.FullName -ceq $rootInfo.FullName -and
+                    $item -is [IO.FileInfo] -and $item.Name -ceq '$TXRAJNL.DAT') {
+                    $preserved.Add($item.Name)
+                    continue
+                }
                 $files.Add($item)
             }
         }
@@ -147,7 +155,7 @@ function Remove-UsbContents($selected, [uint32[]]$protectedDisks) {
         throw '기존 USB 파일이 남아 있어 설치 파일을 복사하지 않습니다.'
     }
     if ($remaining.Preserved.Count) {
-        Write-Host 'Windows 보호 메타데이터 폴더 System Volume Information은 그대로 유지했습니다.'
+        Write-Host ('USB 보호 메타데이터를 그대로 유지했습니다: ' + ($remaining.Preserved -join ', '))
     }
 }
 
@@ -287,7 +295,7 @@ function Start-UsbFileRefresh {
 function Select-UsbVolume([object[]]$choices) {
     if ($choices.Count -eq 0) { throw '대상 USB가 없습니다. 드라이브 문자가 있는 FAT32/exFAT 이동식 USB 볼륨을 연결하세요.' }
     Write-Host '파일을 교체할 USB 볼륨을 선택하세요. 선택한 볼륨의 기존 파일과 폴더가 삭제됩니다. Enter로 취소합니다.'
-    Write-Host '파티션, 파일 시스템, 볼륨 이름은 유지합니다. Windows 보호 폴더 System Volume Information은 남겨 둡니다.'
+    Write-Host '파티션, 파일 시스템, 볼륨 이름은 유지합니다. 루트의 System Volume Information 폴더와 $TXRAJNL.DAT 파일은 남겨 둡니다.'
     for ($i=0; $i -lt $choices.Count; $i++) {
         $c = $choices[$i]
         Write-Host ('[{0}] {1}:  {2}  {3:N1} GiB  {4}  {5}  (디스크 {6}, 파티션 {7})' -f ($i+1),$c.Letter,$c.Model,($c.PartSize / 1GB),$c.Label,$c.FileSystem,$c.Number,$c.Part)

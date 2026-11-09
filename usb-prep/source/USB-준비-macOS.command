@@ -224,7 +224,7 @@ case "$choice" in 0*|*[!0-9]*|????*) stop '표시된 번호만 입력하세요.'
     IFS= read -r selected_scheme; IFS= read -r selected_root
 } < "$work/choice-$choice"
 printf '\n선택한 %s (%s)의 기존 파일과 폴더를 삭제합니다.\n' "$selected_label" "$selected"
-printf '%s\n' 'macOS 관리 폴더 .Spotlight-V100, .fseventsd, .Trashes는 유지합니다.'
+printf '%s\n' 'macOS 관리 폴더와 USB의 보호된 관리 파일은 유지합니다.'
 printf '계속하려면 DELETE %s 를 그대로 입력하세요: ' "$selected"
 IFS= read -r answer || exit 1
 [ "$answer" = "DELETE $selected" ] || { printf '%s\n' '취소했습니다.'; exit 0; }
@@ -258,6 +258,7 @@ my @root = stat($root);
 @root && $root[0] == $device && $root[1] == $inode && S_ISDIR($root[2])
     or die "USB root changed\n";
 my %managed = map { $_ => 1 } qw(.Spotlight-V100 .fseventsd .Trashes);
+my %managed_files = map { $_ => 1 } ('$TXRAJNL.DAT');
 sub check_directory {
     my ($handle) = @_;
     my @pinned = stat($handle);
@@ -295,8 +296,11 @@ sub walk {
                 or die "USB directory changed before removal\n";
             rmdir($name) or die "Cannot remove USB directory: $!\n" if $remove;
         } elsif (S_ISREG($item[2]) || S_ISLNK($item[2])) {
+            # Preserve only this exact regular file at the volume root.
+            # Do not clear its immutable flag or follow a same-named symlink.
+            next if $depth == 0 && S_ISREG($item[2]) && $managed_files{$name};
             # unlink removes a symlink itself; its destination is never opened.
-            unlink($name) or die "Cannot remove USB file: $!\n" if $remove;
+            unlink($name) or die "Cannot remove USB file '$name': $!\n" if $remove;
         } else {
             die "Unsupported special file on USB\n";
         }
@@ -313,7 +317,9 @@ check_directory($root);
 opendir(my $remaining, '.') or die "Cannot verify USB cleanup: $!\n";
 for my $name (grep { $_ ne '.' && $_ ne '..' } readdir($remaining)) {
     my @entry = lstat($name);
-    @entry && $managed{$name} && $entry[0] == $device && S_ISDIR($entry[2])
+    @entry && $entry[0] == $device &&
+        (($managed{$name} && S_ISDIR($entry[2])) ||
+         ($managed_files{$name} && S_ISREG($entry[2])))
         or die "USB still contains files after cleanup\n";
 }
 closedir($remaining) or die "Cannot close final USB listing: $!\n";
