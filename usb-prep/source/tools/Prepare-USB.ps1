@@ -11,7 +11,7 @@ $releaseUrl = '@CARPLAY_RELEASE_BASE@' + '/' + $usbZip
 $usbHash = '@CARPLAY_CORE_SHA256@'
 $upstream = 'HKG_5W_USBWifi_Hotspot.zip'
 $upHash = '7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7'
-$upUrl = 'https://github.com/GRT47/HKG_5W_USB_Wlan/releases/download/v2.0.2/HKG_5W_USBWifi_Hotspot.zip'
+$upUrl = 'https://github.com/GRT47/HKG_5W_USB_Wlan/releases/download/v2.0.2/HKG_5W_USBWifi_Hotspot.zip?download=1'
 $driver = 'packages/usbwifi.hotspot.zip'
 $driverHash = 'd9077ba275398c1578444fdea479a5675e21f1b36f9ad3217e57b65aeadc512b'
 $ready = Join-Path $release 'USB_READY'

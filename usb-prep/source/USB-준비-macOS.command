@@ -18,7 +18,7 @@ release_base='@CARPLAY_RELEASE_BASE@'
 cache="$folder/HKG_5W_USBWifi_Hotspot.zip"
 ready="$folder/USB_READY"
 member=packages/usbwifi.hotspot.zip
-url=https://github.com/GRT47/HKG_5W_USB_Wlan/releases/download/v2.0.2/HKG_5W_USBWifi_Hotspot.zip
+url=https://github.com/GRT47/HKG_5W_USB_Wlan/releases/download/v2.0.2/HKG_5W_USBWifi_Hotspot.zip?download=1
 kit_sha=@CARPLAY_CORE_SHA256@
 upstream_sha=7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7
 member_sha=d9077ba275398c1578444fdea479a5675e21f1b36f9ad3217e57b65aeadc512b

@@ -29,6 +29,13 @@ class Contract(unittest.TestCase):
             self.assertNotIn('31개'.encode(),data)
         self.assertTrue(release.RELEASE_BASE.endswith('/v1.0.3'))
 
+    def test_vendor_download_query_is_pinned_for_both_platforms(self):
+        expected = b'https://github.com/GRT47/HKG_5W_USB_Wlan/releases/download/v2.0.2/HKG_5W_USBWifi_Hotspot.zip?download=1'
+        for path in (BASE/'source/USB-준비-macOS.command', BASE/'source/tools/Prepare-USB.ps1'):
+            data = path.read_bytes()
+            self.assertEqual(data.count(expected), 1)
+            self.assertIn(b'7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7', data)
+
     def test_windows_guid_fix_and_selected_volume_contract_are_preserved(self):
         script=(BASE/'source/tools/WindowsUsbVolume.ps1').read_text(encoding='utf-8-sig')
         self.assertIn('CreateDirectoryW',script)
