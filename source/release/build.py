@@ -96,6 +96,7 @@ def build(cpdir,owner,out):
     original=files.pop('NEMESIS.sh')
     wrapper=(here/'NEMESIS.sh').read_text()
     replacements={
+        '@CLI_RUNNER@':(here.parent/'installer/templates/cli-runner.sh').read_text(),
         '@OWNER_UUID@':owner,'@CP_LAUNCHER@':md5(original),
         '@HOOK_DIAGNOSTICS@':(here.parent/'installer/templates/hook-diagnostics.sh').read_text(),
         '@SETUP_JAR@':md5(files['NEEV_CP/payload/setup.jar']),

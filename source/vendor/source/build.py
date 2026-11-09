@@ -18,4 +18,5 @@ subprocess.run([jdk/'javac','--release','8','-d',classes,*java_files],check=True
 jar=out/'vendor-import.jar'
 subprocess.run([jdk/'java','-cp',r8,'com.android.tools.r8.D8','--release','--min-api','19','--lib',sdk,'--output',jar,*classes.rglob('*.class')],check=True)
 with zipfile.ZipFile(jar) as z: assert z.namelist()==['classes.dex'] and z.read('classes.dex').startswith(b'dex\n035\0')
-shutil.copyfile(src/'import-hkg.sh',out/'import-hkg.sh')
+runner=(src.parent.parent/'installer/templates/cli-runner.sh').read_text()
+(out/'import-hkg.sh').write_text((src/'import-hkg.sh').read_text().replace('@CLI_RUNNER@',runner))

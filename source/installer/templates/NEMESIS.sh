@@ -18,6 +18,7 @@ case "$(id)" in 'uid=0('*|'uid=0 '*|'uid=0') ;; *) exit 2;; esac
 OUT="$USB/NEEV_CP_RESULT_$(date +%Y%m%d_%H%M%S)_$$"
 mkdir "$OUT" || exit 2
 exec > "$OUT/install.log" 2>&1
+@CLI_RUNNER@
 @HOOK_DIAGNOSTICS@
 hook_diagnostics > "$OUT/HMG_HOOK_STATUS.txt" 2>/dev/null || :
 notice() { echo "$1"; am broadcast -a com.hkmc.intent.action.TOAST -e com.hkmc.intent.extra.TOAST_MESSAGE "$1" --ez com.hkmc.intent.extra.TOAST_POPUPSHOWING true >/dev/null 2>&1 || :; }
@@ -79,6 +80,18 @@ check_public_release_102_kit() {
         check_kit "$1" 97bf7ec190f1d9d7ed1474f1779a678a &&
         regular "$1/payload/mod/META-HMGAPI/manifest.json" &&
         [ "$(hash "$1/payload/mod/META-HMGAPI/manifest.json")" = 3506468513d6f43f454d9ba019c71de3 ]
+}
+# Original public 1.0.3 before the installer-only revision. Its complete kit is
+# accepted only for authenticated retirement, never execution under new rules.
+# Core USB SHA256 76174dfab95ae3a8b97e7f0a6ce492ec49a507194e9135103deef90dd29e8ef2.
+check_original_public_103_kit() {
+    [ "@OWNER@" = "bd5f651c-38f9-8ef4-827c-34ad706c2b5c" ] &&
+        check_kit "$1" f7bba11d2af01840e9887085c2357b3c &&
+        regular "$1/payload/mod/META-HMGAPI/manifest.json" &&
+        [ "$(hash "$1/payload/mod/META-HMGAPI/manifest.json")" = 4d93094965f723ecb20912d45074cfa2 ]
+}
+check_retired_public_103_kit() {
+    check_recorded_kit || check_original_public_103_kit "$R/kit"
 }
 # Exact installed 1.0.2 transaction from the map-repair USB build.
 # USB SHA256 f2a1db15cb93cf0625059211087f1c84318bdbde7b9b358a1e05034b4a078d95.
@@ -247,19 +260,26 @@ acquire_legacy_lock() {
 verify_removed_source() {
     dir "$1" && dir "$1/META-HMGAPI" && regular "$1/META-HMGAPI/manifest.json" &&
         [ "$(hash "$1/META-HMGAPI/manifest.json")" = "$2" ] || return 1
-    ( export ANDROID_ROOT=/system ANDROID_DATA=/data CLASSPATH=/system/framework/hmgapi-hook.jar
-      exec /system/bin/app_process /system/bin hmgapi.engine.Signing verify "$1" "@OWNER@" )
+    cli_java /system/framework/hmgapi-hook.jar hmgapi.engine.Signing verify "$1" "@OWNER@"
 }
 verify_removed_workspace() {
     regular "$W/UPGRADE_CURRENT.txt" || return 1
     version=$(cat "$W/UPGRADE_CURRENT.txt")
     # Same visible version as an old internal build is not sufficient proof.
-    if [ "$version" = 1.0.3 ] && ! absent "$R"; then
+    if { [ "$version" = 1.0.3 ] || [ "$version" = none ]; } && ! absent "$R"; then
         record=$R
-        dir "$record" && check_recorded_kit && regular "$record/STATUS" &&
-            [ "$(cat "$record/STATUS")" = INSTALLED ] && regular "$record/mode" || return 1
-        case "$(cat "$record/mode")" in fresh|1.0.1) ;; *) return 1;; esac
-        verify_removed_source "$record/kit/payload/mod" "@PUBLIC_MOD_MD5@"
+        dir "$record" && check_retired_public_103_kit && regular "$record/STATUS" &&
+            regular "$record/mode" || return 1
+        if [ "$version" = none ]; then
+            [ "$(cat "$record/STATUS")" = RESTORED ] &&
+                [ "$(cat "$record/mode")" = fresh ] || return 1
+        else
+            [ "$(cat "$record/STATUS")" = INSTALLED ] || return 1
+            case "$(cat "$record/mode")" in fresh|1.0.1) ;; *) return 1;; esac
+        fi
+        if check_recorded_kit; then retired_manifest=@PUBLIC_MOD_MD5@
+        else retired_manifest=4d93094965f723ecb20912d45074cfa2; fi
+        verify_removed_source "$record/kit/payload/mod" "$retired_manifest"
         return
     fi
     # A completed public 1.0.2 uninstall has its own independently pinned kit.
@@ -347,8 +367,7 @@ retire_removed_workspace() {
     fi
     # Apply changes in the management app finishes removal using the owner's
     # selected plan. Never apply unrelated pending changes here.
-    ( export ANDROID_ROOT=/system ANDROID_DATA=/data CLASSPATH=/system/framework/hmgapi-hook.jar
-      exec /system/bin/app_process /system/bin hmgapi.engine.Engine plan ) > "$LOCK/after-remove-plan.txt" 2>&1 || stop APPLY_CHANGES_AFTER_REMOVE
+    cli_java /system/framework/hmgapi-hook.jar hmgapi.engine.Engine plan > "$LOCK/after-remove-plan.txt" 2>&1 || stop APPLY_CHANGES_AFTER_REMOVE
     while read -r kind rest; do
         case "$kind" in 'change'|'update'|'restore'|'setting'|'bind'|'unbind'|'problem') stop APPLY_CHANGES_AFTER_REMOVE;; esac
     done < "$LOCK/after-remove-plan.txt"
@@ -378,11 +397,13 @@ retire_removed_workspace() {
     echo "RETIRED_MANUAL_UNINSTALL=$version"
 }
 # Never replace a different transaction under this release's path.
-if dir "$R" && ! check_recorded_kit; then stop LOCAL_TRANSACTION_DAMAGED; fi
+if dir "$R" && ! check_recorded_kit; then
+    [ "$restore" = 0 ] && absent "$MOD" && check_original_public_103_kit "$R/kit" || stop LOCAL_TRANSACTION_DAMAGED
+fi
 if [ "$restore" = 0 ] && dir "$W" && absent "$MOD"; then
     if absent "$R" || { dir "$R" && regular "$R/STATUS" &&
         { [ "$(cat "$R/STATUS")" = INSTALLED ] ||
-          { [ "$(cat "$R/STATUS")" = RESTORED ] && regular "$W/UPGRADE_CURRENT.txt" && { [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.1 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.2 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.3 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.4 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.5 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.6 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.7 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.9 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.10 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.11 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.12 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.13 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.14 ]; }; }; }; }; then
+          { [ "$(cat "$R/STATUS")" = RESTORED ] && regular "$W/UPGRADE_CURRENT.txt" && { [ "$(cat "$W/UPGRADE_CURRENT.txt")" = none ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.1 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.2 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.3 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.4 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.5 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.6 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.7 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.9 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.10 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.11 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.12 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.13 ] || [ "$(cat "$W/UPGRADE_CURRENT.txt")" = 1.0.14 ]; }; }; }; }; then
         retire_removed_workspace
     fi
 fi

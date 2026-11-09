@@ -30,6 +30,33 @@ class PublicUsb103(fixture.UsbAuto):
         self.invoke('INSTALL_COMPLETE')
         self.assertTrue(self.calls.read_text().startswith('native:install '))
 
+    def failed_fresh(self, state='RESTORED', mode='fresh'):
+        self.public.mkdir(parents=True)
+        (self.w/'UPGRADE_CURRENT.txt').write_text('none\n')
+        (self.public/'STATUS').write_text(state+'\n')
+        (self.public/'mode').write_text(mode+'\n')
+
+    def test_failed_fresh_rollback_routes_only_to_authenticated_installer(self):
+        self.failed_fresh()
+        self.invoke('INSTALL_COMPLETE')
+        self.assertTrue(self.calls.read_text().startswith('native:install '))
+
+    def test_failed_fresh_incomplete_never_routes(self):
+        self.failed_fresh('INSTALLING')
+        self.invoke('UNSUPPORTED_WORKSPACE_VERSION', 1)
+        self.no_calls()
+
+    def test_failed_fresh_wrong_mode_never_routes(self):
+        self.failed_fresh(mode='1.0.1')
+        self.invoke('UNSUPPORTED_WORKSPACE_VERSION', 1)
+        self.no_calls()
+
+    def test_failed_fresh_live_mod_never_routes(self):
+        self.failed_fresh()
+        self.cp.mkdir(parents=True)
+        self.invoke('UNSUPPORTED_WORKSPACE_VERSION', 1)
+        self.no_calls()
+
     def test_active_public102_requires_manual_uninstall(self):
         self.installed('1.0.2')
         (self.w/'public-1.0.2').rename(self.w/'public-release-1.0.2')

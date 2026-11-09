@@ -48,12 +48,13 @@ def build_payload(mod, setup_jar, maps, target, vendor_dir, out, uuid=DEFAULT_UU
         shutil.copyfile(vendor_dir/name, pack/name)
     public_mod_md5=md5(mod/'META-HMGAPI/manifest.json')
     script=(HERE/'templates/operate.sh').read_text()
+    script=script.replace('@CLI_RUNNER@',(HERE/'templates/cli-runner.sh').read_text())
     script=script.replace('UUID='+DEFAULT_UUID+'\n','UUID='+uuid+'\n').replace('@PUBLIC_MOD_MD5@',public_mod_md5)
     (pack/'operate.sh').write_text(script)
     entries = [f for f in sorted(pack.rglob('*')) if f.is_file()]
     manifest=''.join(f'{md5(f)}  {f.relative_to(pack).as_posix()}\n' for f in entries)
     (pack/'MANIFEST.md5').write_text(manifest)
-    wrapper=(HERE/'templates/NEMESIS.sh').read_text().replace('@HOOK_DIAGNOSTICS@',(HERE/'templates/hook-diagnostics.sh').read_text()).replace('@PACK_MD5@',md5(pack/'MANIFEST.md5')).replace('@OWNER@',uuid).replace('@PUBLIC_MOD_MD5@',public_mod_md5)
+    wrapper=(HERE/'templates/NEMESIS.sh').read_text().replace('@CLI_RUNNER@',(HERE/'templates/cli-runner.sh').read_text()).replace('@HOOK_DIAGNOSTICS@',(HERE/'templates/hook-diagnostics.sh').read_text()).replace('@PACK_MD5@',md5(pack/'MANIFEST.md5')).replace('@OWNER@',uuid).replace('@PUBLIC_MOD_MD5@',public_mod_md5)
     (out/'NEMESIS.sh').write_text(wrapper)
     (out/'NEMESIS.data').write_text('[nemesis]\nversion=1.0\ntype=execute\npath=NEMESIS.sh\n')
     for f in (pack/'operate.sh',out/'NEMESIS.sh',pack/'import-hkg.sh'):

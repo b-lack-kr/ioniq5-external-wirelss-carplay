@@ -14,7 +14,8 @@ case "$mode" in fresh) old_md5=absent;; 0.1.10) old_md5=b82a23b7e928c80d4c90fa16
         *) stop BAD_MODE;;
     esac;; 1.0.5) old_md5=ed448f1ff1b2271cb94faca84d9c9b83;; 1.0.6) old_md5=996a307153f0a2bdfc5379235d386e7e;; 1.0.7) old_md5=2bd01e8dfdee15774e003fb9c4eca170;; 1.0.9) old_md5=a4f9facdf98a3576b0221e06fdc88fbd;; 1.0.10) old_md5=9d376dea3f6253484996c340e471983d;; 1.0.11) old_md5=5290d4f672e0afac9522dc36a190c4cf;; 1.0.12) old_md5=8b19ded5ac2b93da86a0a65eeb9fb73e;; 1.0.13) old_md5=e84dcee836c98ef74e7d0be8a8e6bc11;; 1.0.14) old_md5=e0f3a6b8e3206d1bbb9f5c1597033084;; *) stop BAD_MODE;; esac
 mark() { echo "$1" > "$R/STATUS.next" && sync && mv "$R/STATUS.next" "$R/STATUS" && sync || stop STATUS_WRITE; }
-app() { ( export CLASSPATH="$1" ANDROID_ROOT=/system ANDROID_DATA=/data; shift; exec /system/bin/app_process /system/bin "$@" ); }
+@CLI_RUNNER@
+app() { cli_java "$@"; }
 engine() { app /system/framework/hmgapi-hook.jar hmgapi.engine.Engine "$@"; }
 helper() { app "$U/payload/setup.jar" kr.ioniq5.usbcp.setup.Setup "$@"; }
 signed() { app /system/framework/hmgapi-hook.jar hmgapi.engine.Signing verify "$1" "$UUID"; }

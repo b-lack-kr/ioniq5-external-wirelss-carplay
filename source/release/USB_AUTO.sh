@@ -92,7 +92,13 @@ workspace_version=
 if exists "$W"; then
     directory "$W" || fail WORKSPACE_INVALID
     workspace_version=$(read_one_line "$W/UPGRADE_CURRENT.txt") || fail WORKSPACE_VERSION_INVALID
-    known_version "$workspace_version" || fail UNSUPPORTED_WORKSPACE_VERSION
+    if ! known_version "$workspace_version"; then
+        # A failed fresh install may have completed its rollback. Route only to
+        # the authenticated installer; this dispatcher never trusts its bytes.
+        [ "$workspace_version" = none ] && [ "$installed" = 0 ] && ! exists "$CP" &&
+            directory "$PUBLIC" && [ "$(read_one_line "$PUBLIC/STATUS")" = RESTORED ] &&
+            [ "$(read_one_line "$PUBLIC/mode")" = fresh ] || fail UNSUPPORTED_WORKSPACE_VERSION
+    fi
 fi
 if exists "$CP"; then directory "$CP" || fail MOD_DIRECTORY_INVALID; fi
 
@@ -130,7 +136,11 @@ else
     # The immutable installer verifies any retained uninstall history itself.
     # Existing incomplete transactions must be resolved explicitly.
     if exists "$PUBLIC"; then
-        directory "$PUBLIC" && [ "$(read_one_line "$PUBLIC/STATUS")" = INSTALLED ] || fail INCOMPLETE_TRANSACTION
+        directory "$PUBLIC" || fail INCOMPLETE_TRANSACTION
+        public_state=$(read_one_line "$PUBLIC/STATUS") || fail INCOMPLETE_TRANSACTION
+        [ "$public_state" = INSTALLED ] ||
+            { [ "$public_state" = RESTORED ] && [ "$workspace_version" = none ] &&
+              [ "$(read_one_line "$PUBLIC/mode")" = fresh ]; } || fail INCOMPLETE_TRANSACTION
     fi
     status INSTALLING
     "$CLI" install "$PACKAGE"

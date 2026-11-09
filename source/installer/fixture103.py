@@ -59,7 +59,8 @@ if name=='hmgapid':
   rows=(H/'state/services.status').read_text().splitlines(); write(H/'state/services.status',''.join(('neev-usb-carplay '+a[2]+' stopped 0' if x.startswith('neev-usb-carplay '+a[2]+' ') else x)+'\n' for x in rows))
  elif a[0] not in ('ping','services'):raise ValueError(a)
  sys.exit()
-assert name=='app_process',name
+assert name in ('app_process','app_process.hmgapi-stock'),name
+if a and a[0]=='-Xint':a=a[1:]
 _,cls,op,*a=a
 if cls.endswith('.Setup'):
  if op=='uid':pass
@@ -134,7 +135,7 @@ class Installation(unittest.TestCase):
         self.bin=self.root/'system/bin'
         for cmd in ('getprop','md5','hmgapid','am','app_process','dnsmasq','hostapd','sync','sleep','id'):
             write(self.bin/cmd,MOCK,True)
-        write(self.bin/'app_process.hmgapi-stock','stock');(self.bin/'sh').symlink_to('/bin/sh')
+        write(self.bin/'app_process.hmgapi-stock',MOCK,True);(self.bin/'sh').symlink_to('/bin/sh')
         write(self.root/'system/firmware','fixture')
         write(self.pack/'payload/TARGET.md5',md5(b'fixture')+'  '+str(self.root)+'/system/firmware\n')
         self.new='{"owner":"'+UUID+'","version":"1.0.3"}'
@@ -148,7 +149,7 @@ if [ -e "@ROOT@/no-vendor" ]; then exit 2; fi
 if [ "$2" = install ]; then mkdir -p "@ROOT@/data/nemesis/neev-usbcp/vendor/hkg-2.0.2"; echo fixture > "@ROOT@/data/nemesis/neev-usbcp/vendor/hkg-2.0.2/asset"; fi
 '''.replace('@ROOT@',str(self.root));write(self.pack/'import-hkg.sh',script)
         def template(name):
-            s=(HERE/'templates'/name).read_text().replace('@HOOK_DIAGNOSTICS@',(HERE/'templates/hook-diagnostics.sh').read_text()).replace('@PUBLIC_MOD_MD5@',md5(self.new.encode())).replace('@OWNER@',UUID)
+            s=(HERE/'templates'/name).read_text().replace('@CLI_RUNNER@',(HERE/'templates/cli-runner.sh').read_text()).replace('@HOOK_DIAGNOSTICS@',(HERE/'templates/hook-diagnostics.sh').read_text()).replace('@PUBLIC_MOD_MD5@',md5(self.new.encode())).replace('@OWNER@',UUID)
             s=s.replace(OLD1,md5(self.old.encode())).replace('468a2a355ca642dc0b2cfb4c3a45204f',md5(self.legacy_manifest.encode()))
             for prefix in ('/data/','/proc/','/system/'):
                 s=s.replace(prefix,str(self.root)+prefix)

@@ -18,6 +18,60 @@ def tree(path):
 
 
 class Public103(fixture.Installation):
+    def original_public103(self, state='RESTORED', version='none'):
+        archive_path = fixture.PROJECT/'neev-carplay/publishing/20261109-v103-release/assets/NEEV_260902_CarPlay_1.0.3_USB.zip'
+        self.assertEqual(hashlib.sha256(archive_path.read_bytes()).hexdigest(),
+                         '76174dfab95ae3a8b97e7f0a6ce492ec49a507194e9135103deef90dd29e8ef2')
+        with ZipFile(archive_path) as archive:
+            for name in archive.namelist():
+                if name.startswith('NEEV_CP/') and not name.endswith('/'):
+                    target = self.R/'kit'/name[len('NEEV_CP/'):]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(archive.read(name))
+        write(self.R/'STATUS', state+'\n')
+        write(self.R/'mode', 'fresh\n')
+        write(self.R/'backup/keep', 'failed install rollback evidence')
+        write(self.W/'UPGRADE_CURRENT.txt', version+'\n')
+        write(self.usb/'packages/usbwifi.hotspot.zip', 'vendor fixture')
+        return self.R
+
+    def test_original103_failed_fresh_rollback_retries_with_new_kit(self):
+        old = self.original_public103()
+        before = tree(old)
+        self.assertEqual(self.run_usb(), 'COMPLETE')
+        archives = list(self.W.parent.glob('neev-usbcp-removed-*'))
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(tree(archives[0]/'public-release-1.0.3'), before)
+        self.assertEqual((self.R/'mode').read_text().strip(), 'fresh')
+
+    def test_original103_uninstalled_reinstalls_with_new_kit(self):
+        old = self.original_public103('INSTALLED', '1.0.3')
+        before = tree(old)
+        self.assertEqual(self.run_usb(), 'COMPLETE')
+        archive = next(self.W.parent.glob('neev-usbcp-removed-*'))
+        self.assertEqual(tree(archive/'public-release-1.0.3'), before)
+
+    def test_original103_modified_rollback_not_accepted(self):
+        old = self.original_public103()
+        write(old/'kit/operate.sh', 'tampered')
+        before = tree(self.W)
+        self.assertEqual(self.run_usb(False), 'LOCAL_TRANSACTION_DAMAGED')
+        self.assertEqual(tree(self.W), before)
+
+    def test_original103_rollback_pending_plan_is_not_applied(self):
+        self.original_public103()
+        write(self.root/'foreign-plan', 'pending')
+        before = tree(self.W)
+        self.assertEqual(self.run_usb(False), 'APPLY_CHANGES_AFTER_REMOVE')
+        self.assertEqual(tree(self.W), before)
+
+    def test_original103_rollback_wrong_mode_not_retired(self):
+        self.original_public103()
+        write(self.R/'mode', '1.0.1\n')
+        before = tree(self.W)
+        self.assertEqual(self.run_usb(False), 'UNOWNED_REMOVED_SETUP')
+        self.assertEqual(tree(self.W), before)
+
     def public102(self):
         self.assertEqual(hashlib.sha256(PUBLIC_102.read_bytes()).hexdigest(), PUBLIC_102_SHA)
         record = self.W/'public-release-1.0.2'
