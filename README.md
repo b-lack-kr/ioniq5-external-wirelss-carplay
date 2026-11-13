@@ -1,6 +1,6 @@
 # IONIQ 5 무선 CarPlay (외장 USB 동글)
 
-**올인원 1.1.3 사전 공개:** [USB 준비 도구와 안내](https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/tag/v1.1.3). Mac 또는 Windows에서 Python 설치 없이 준비 스크립트를 실행합니다. 1.1.3 안내 수정은 실차 검증 전이며 Windows USB 작성은 실제 Windows 검증 전입니다. 아래 설명은 기존 1.0.3에 대한 내용입니다.
+**올인원 1.1.3:** [USB 준비 도구와 안내](https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/tag/v1.1.3). Mac 또는 Windows에서 Python 설치 없이 준비 스크립트를 실행합니다. 1.1.3 안내 수정은 실차 검증 전이며 Windows USB 작성은 실제 Windows 검증 전입니다. 아래 설명은 기존 1.0.3에 대한 내용입니다.
 
 **CarPlay 1.0.3 · by blackr — 연결 시험용 릴리스**
 
