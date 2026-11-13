@@ -1,5 +1,7 @@
 # IONIQ 5 무선 CarPlay (외장 USB 동글)
 
+**올인원 1.1.3 사전 공개:** [USB 준비 도구와 안내](https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/tag/v1.1.3). Mac 또는 Windows에서 Python 설치 없이 준비 스크립트를 실행합니다. 1.1.3 안내 수정은 실차 검증 전이며 Windows USB 작성은 실제 Windows 검증 전입니다. 아래 설명은 기존 1.0.3에 대한 내용입니다.
+
 **CarPlay 1.0.3 · by blackr — 연결 시험용 릴리스**
 
 한국형 아이오닉5 Gen5W에서 호환되는 5GHz USB Wi-Fi 동글로 무선 CarPlay를 연결합니다. 대상은 `NEEV.KOR.S5W_M.V039.001.260902` / `tcc803x`이며, NEMESIS와 **HMG-API 1.0.1 이상**, 활성화된 Hooks가 필요합니다. HMG-API 1.0.2를 사용 중이면 그대로 유지하세요. 기준 차량은 2023MY `NE1AE.S5BMC.KR`, 기준 동글은 Archer T3U Nano입니다.
