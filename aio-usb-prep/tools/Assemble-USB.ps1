@@ -1,8 +1,16 @@
 # Native Windows PowerShell 5.1 assembly. Loaded by Prepare-USB.ps1.
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$script:templateHash = 'bc5ec7d55f09d68be77635075cc851e21351bfad63d270ce8c5b41f8311e59c4'
-$script:templateUrl = 'https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/download/v1.1.3/bundle-template.zip'
+$script:partsBaseUrl = 'https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/download/v1.1.3/'
+$script:parts = @(
+    @{Name='aio-common.zip'; Hash='907687796be4b869d4061d9f33238941ed3354c8d00f11850afd630d79312d1d'; Pattern='^(NEMESIS\.data|NEMESIS\.sh|README\.txt|cp-upgrade\.sh|precondition-transition-guard\.sh|precondition-upgrade\.sh|stage-signed\.sh|update-description\.sh)$'},
+    @{Name='carplay.zip'; Hash='abfa58cd4a77c5168e2b1f09d8f956dedab8b2c27d0f1a50432c0886f809fe37'; Pattern='^CP/'},
+    @{Name='warmer.zip'; Hash='0727ce71a8b6c2ee4b0789527e01d64c5b62cb82be9ccf90406c7654e613b116'; Pattern='^WARMER/'},
+    @{Name='favorites.zip'; Hash='5f0571bb16b27577bf6b72477e994eb3cdb9b795872deb092b77a3cd6452bcb9'; Pattern='^STAR/'},
+    @{Name='mute-pause.zip'; Hash='104cc490e8d5663f5b0c22737b4c4bb903360583fce593d95069a7279fa3be1f'; Pattern='^packages/hmgapi\.neev-carplay-mute-pause\.zip$'},
+    @{Name='dongle-adb.zip'; Hash='72309c3633cdd4126c6a68f3d32b5ff58d9acbaeaec406a69a9ff66d6f68bd02'; Pattern='^packages/local\.neev\.dongle-adb-1\.0\.5\.zip$'},
+    @{Name='preconditioning.zip'; Hash='95d65dbcdec22322c04fc46c35839aad7a6fb68c943c14bf25f900e0c76c8d60'; Pattern='^packages/paytondev\.launchpad\.zip$'}
+)
 $script:vendorHash = '7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7'
 $script:wifiHash = 'd9077ba275398c1578444fdea479a5675e21f1b36f9ad3217e57b65aeadc512b'
 $script:vendorUrl = 'https://github.com/GRT47/HKG_5W_USB_Wlan/releases/download/v2.0.2/HKG_5W_USBWifi_Hotspot.zip?download=1'
@@ -61,11 +69,13 @@ function Assert-ZipEntries([IO.Compression.ZipArchive]$zip) {
         if($mode -eq 0xA000) {throw 'ZIP symlink refused.'}
     }
 }
-function Unpack-Checked([string]$archive,[string]$root) {
+function Unpack-Checked([string]$archive,[string]$root,[string]$allowedPattern,[Collections.Generic.HashSet[string]]$seenPaths) {
     $zip=[IO.Compression.ZipFile]::OpenRead($archive)
     try {
         Assert-ZipEntries $zip; $total=0L
         foreach($entry in $zip.Entries) {
+            if($entry.FullName -cnotmatch $allowedPattern){throw 'ZIP member outside its component scope.'}
+            if(!$seenPaths.Add($entry.FullName.TrimEnd('/'))){throw 'Duplicate path across components.'}
             $total += $entry.Length; if($total -gt 256MB){throw 'ZIP exceeds size limit.'}
             $target=[IO.Path]::Combine($root,$entry.FullName.Replace([char]'/',[IO.Path]::DirectorySeparatorChar))
             if($entry.FullName.EndsWith('/')) {[void][IO.Directory]::CreateDirectory($target);continue}
@@ -126,18 +136,22 @@ function Get-KeyIdentity([byte[]]$key) {
 }
 function New-UsbPayload([string]$stage,[string]$work,[string]$release) {
     if([IO.Directory]::Exists($stage) -or [IO.File]::Exists($stage)){throw 'Output already exists.'}
-    $template=Join-Path $release 'bundle-template.zip'
-    if(![IO.File]::Exists($template)) {
-        Write-Host 'Downloading the installation template from GitHub...'
-        $templateData=Download-Https $script:templateUrl (128MB)
-        if((Sha256Bytes $templateData) -cne $script:templateHash){throw 'Template SHA-256 mismatch.'}
-        $template=Join-Path $work 'bundle-template.zip'
-        [IO.File]::WriteAllBytes($template,$templateData)
-    } else {
-        $item=Get-Item -LiteralPath $template -Force
-        if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Invalid template ZIP.'}
+    $verifiedParts=@()
+    foreach($part in $script:parts) {
+        $local=Join-Path $release $part.Name
+        if([IO.File]::Exists($local)) {
+            $item=Get-Item -LiteralPath $local -Force
+            if($item.Attributes -band [IO.FileAttributes]::ReparsePoint -or $item.Length -gt 128MB){throw 'Invalid component ZIP.'}
+            $partData=[IO.File]::ReadAllBytes($local)
+        } else {
+            Write-Host ('Downloading '+$part.Name+' from GitHub...')
+            $partData=Download-Https ($script:partsBaseUrl+$part.Name) (128MB)
+        }
+        if((Sha256Bytes $partData) -cne $part.Hash){throw ('Component SHA-256 mismatch: '+$part.Name)}
+        $temp=Join-Path $work $part.Name
+        [IO.File]::WriteAllBytes($temp,$partData)
+        $verifiedParts+=@(@{Path=$temp;Pattern=$part.Pattern})
     }
-    if(!(Test-Path -LiteralPath $template -PathType Leaf) -or (Get-FileHash -LiteralPath $template -Algorithm SHA256).Hash.ToLowerInvariant() -cne $script:templateHash){throw 'Template SHA-256 mismatch.'}
     $key=Get-AdbPublicKey $work
     $vendor=Join-Path $release 'HKG_5W_USBWifi_Hotspot.zip'
     if([IO.File]::Exists($vendor)) {
@@ -155,7 +169,8 @@ function New-UsbPayload([string]$stage,[string]$work,[string]$release) {
     } finally {$zip.Dispose()}
     if((Sha256Bytes $wifi) -cne $script:wifiHash){throw 'Wi-Fi package SHA-256 mismatch.'}
     [void][IO.Directory]::CreateDirectory($stage)
-    Unpack-Checked $template $stage
+    $seenPaths=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($part in $verifiedParts){Unpack-Checked $part.Path $stage $part.Pattern $seenPaths}
     $wifiPath=Join-Path $stage 'CP\packages\usbwifi.hotspot.zip'
     [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($wifiPath))
     [IO.File]::WriteAllBytes($wifiPath,$wifi)

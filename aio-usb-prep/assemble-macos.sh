@@ -19,29 +19,47 @@ trap 'exit 1' HUP INT TERM
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 fetch() { /usr/bin/curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --max-time 180 --max-filesize 67108864 -o "$2" "$1" || fail '필요한 파일을 내려받지 못했습니다.'; }
 check_sha() { [ "$(/usr/bin/shasum -a 256 "$1" | /usr/bin/awk '{print $1}')" = "$2" ] || fail '다운로드 파일의 SHA-256 확인에 실패했습니다.'; }
-TEMPLATE_SHA=bc5ec7d55f09d68be77635075cc851e21351bfad63d270ce8c5b41f8311e59c4
 VENDOR_SHA=7a7e5c7a46fbf160d7b9b91fe4333ea55e4865233450c285361f9ef1a11059d7
 WIFI_SHA=d9077ba275398c1578444fdea479a5675e21f1b36f9ad3217e57b65aeadc512b
-# Release integration replaces this fixed URL with the pinned GitHub release asset.
-TEMPLATE_URL='https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/download/v1.1.3/bundle-template.zip'
-template="$folder/bundle-template.zip"
-if [ ! -f "$template" ] || [ -L "$template" ]; then
- case "$TEMPLATE_URL" in https://github.com/*) ;; *) fail '설치 템플릿 주소가 설정되지 않았습니다.';; esac
- template="$work/bundle-template.zip"; fetch "$TEMPLATE_URL" "$template"
-fi
-check_sha "$template" "$TEMPLATE_SHA"
+PARTS_URL='https://github.com/b-lack-kr/ioniq5-external-wirelss-carplay/releases/download/v1.1.3'
+mkdir "$work/USB_READY"
+: > "$work/merged-list"
+part() {
+ name=$1; expected=$2; scope=$3; archive="$folder/$name.zip"
+ if [ ! -f "$archive" ] || [ -L "$archive" ]; then
+  archive="$work/$name.zip"
+  printf '설치 구성요소 다운로드: %s\n' "$name"
+  fetch "$PARTS_URL/$name.zip" "$archive"
+ fi
+ check_sha "$archive" "$expected"
+ /usr/bin/unzip -tqq "$archive" >/dev/null || fail '설치 구성요소가 손상되었습니다.'
+ /usr/bin/unzip -Z1 "$archive" > "$work/part-list"
+ # Pin known archives and reject duplicate, unsafe, or unexpected paths.
+ /usr/bin/awk -v scope="$scope" '
+  BEGIN {ok=1}
+  /^$/ || /^\// || /\\/ || /(^|\/)\.\.?($|\/)/ || /\/$/ {ok=0}
+  {if (seen[$0]++) ok=0; if ($0 !~ scope) ok=0}
+  END {exit !ok}
+ ' "$work/part-list" || fail '설치 구성요소의 파일 경로가 예상과 다릅니다.'
+ while IFS= read -r member; do
+  if /usr/bin/grep -Fxq -- "$member" "$work/merged-list"; then fail '설치 구성요소의 파일이 중복됩니다.'; fi
+  printf '%s\n' "$member" >> "$work/merged-list"
+ done < "$work/part-list"
+ /usr/bin/unzip -qq "$archive" -d "$work/USB_READY" || fail '설치 구성요소를 풀지 못했습니다.'
+}
+part aio-common 907687796be4b869d4061d9f33238941ed3354c8d00f11850afd630d79312d1d '^(NEMESIS[.]data|NEMESIS[.]sh|README[.]txt|cp-upgrade[.]sh|precondition-transition-guard[.]sh|precondition-upgrade[.]sh|stage-signed[.]sh|update-description[.]sh)$'
+part carplay abfa58cd4a77c5168e2b1f09d8f956dedab8b2c27d0f1a50432c0886f809fe37 '^CP/'
+part warmer 0727ce71a8b6c2ee4b0789527e01d64c5b62cb82be9ccf90406c7654e613b116 '^WARMER/'
+part favorites 5f0571bb16b27577bf6b72477e994eb3cdb9b795872deb092b77a3cd6452bcb9 '^STAR/'
+part mute-pause 104cc490e8d5663f5b0c22737b4c4bb903360583fce593d95069a7279fa3be1f '^packages/hmgapi[.]neev-carplay-mute-pause[.]zip$'
+part dongle-adb 72309c3633cdd4126c6a68f3d32b5ff58d9acbaeaec406a69a9ff66d6f68bd02 '^packages/local[.]neev[.]dongle-adb-1[.]0[.]5[.]zip$'
+part preconditioning 95d65dbcdec22322c04fc46c35839aad7a6fb68c943c14bf25f900e0c76c8d60 '^packages/paytondev[.]launchpad[.]zip$'
 if [ -z "$vendor" ]; then
  vendor="$work/HKG_5W_USBWifi_Hotspot.zip"
  fetch 'https://github.com/GRT47/HKG_5W_USB_Wlan/releases/download/v2.0.2/HKG_5W_USBWifi_Hotspot.zip?download=1' "$vendor"
 fi
 [ -f "$vendor" ] && [ ! -L "$vendor" ] || fail '동글 파일을 읽을 수 없습니다.'
 check_sha "$vendor" "$VENDOR_SHA"
-/usr/bin/unzip -tqq "$template" >/dev/null || fail '설치 템플릿이 손상되었습니다.'
-/usr/bin/unzip -Z1 "$template" > "$work/template-list"
-# The immutable hash additionally pins all path names and ZIP member types.
-/usr/bin/awk 'BEGIN {ok=1} /^\// || /\\/ || /(^|\/)\.\.(\/|$)/ {ok=0} END {exit !ok}' "$work/template-list" || fail '설치 템플릿 경로가 안전하지 않습니다.'
-mkdir "$work/USB_READY"
-/usr/bin/unzip -qq "$template" -d "$work/USB_READY" || fail '설치 템플릿을 풀지 못했습니다.'
 /usr/bin/unzip -p "$vendor" packages/usbwifi.hotspot.zip > "$work/usbwifi.hotspot.zip" || fail '동글 파일을 추출하지 못했습니다.'
 check_sha "$work/usbwifi.hotspot.zip" "$WIFI_SHA"
 mkdir -p "$work/USB_READY/CP/packages"
