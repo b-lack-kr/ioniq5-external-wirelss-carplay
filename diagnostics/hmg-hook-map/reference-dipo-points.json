@@ -1,0 +1,25 @@
+{
+  "dipo.session_listener": {
+    "class": "com.daudio.app.dipo.service.q"
+  },
+  "dipo.session_listener.disable_bluetooth": {
+    "method": "onDisableBluetooth",
+    "params": [
+      "java.lang.String"
+    ],
+    "ret": "void",
+    "static": false
+  },
+  "dipo.location_nmea": {
+    "class": "com.daudio.app.dipo.h.e"
+  },
+  "dipo.location_nmea.received": {
+    "method": "onNmeaReceived",
+    "params": [
+      "long",
+      "java.lang.String"
+    ],
+    "ret": "void",
+    "static": false
+  }
+}
